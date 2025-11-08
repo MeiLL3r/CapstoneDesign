@@ -7,7 +7,7 @@ import serial
 import time
 import json
 import os
-import threading
+import atexit
 
 # --- 설정 (Constants) ---
 CONFIG_FILE = 'config.json'
@@ -20,13 +20,14 @@ BAUD_RATE = 9600
 device_id = None
 firebase_app = None
 arduino = None
+# 리스너 객체를 저장할 전역 변수 추가
+listener = None
 
 # --- 1. 최초 실행 시 설정 함수 ---
 def setup_device():
     global device_id
     print("--- 최초 설정 모드 ---")
     
-    # 1-1. 사용자로부터 기기 ID와 별명 입력받기
     device_id = input("기기 고유번호를 입력하세요 (예: 123): ").strip()
     device_name = input(f"'{device_id}' 기기의 별명을 입력하세요 (예: 내 작업복): ").strip()
 
@@ -34,21 +35,13 @@ def setup_device():
         print("오류: 기기 고유번호와 별명은 반드시 입력해야 합니다.")
         exit()
 
-    # 1-2. Firebase 데이터베이스에 초기 구조 셋업
     print("Firebase에 초기 데이터 구조를 생성합니다...")
     try:
-        # 여기에 app=firebase_app 인자를 명시적으로 전달
         ref = db.reference(f'devices/{device_id}', app=firebase_app)
         ref.set({
             'name': device_name,
-            'connection': {
-                'status': 'offline',
-                'last_seen': 0
-            },
-            'control': {
-                'mode': 'cooling',
-                'target_temp': 22
-            },
+            'connection': {'status': 'offline', 'last_seen': 0},
+            'control': {'mode': 'cooling', 'target_temp': 22},
             'status': {
                 'current_temp': 0,
                 'sensors': {
@@ -64,7 +57,6 @@ def setup_device():
         print(f"❌ Firebase 셋업 실패: {e}")
         exit()
 
-    # 1-3. 설정 파일에 기기 ID 저장
     with open(CONFIG_FILE, 'w') as f:
         json.dump({'device_id': device_id}, f)
     print(f"✅ 설정 파일 '{CONFIG_FILE}'이 생성되었습니다.")
@@ -73,7 +65,6 @@ def setup_device():
 def control_listener(event):
     print(f"🔥 Firebase 제어 데이터 변경 감지: 경로({event.path}), 데이터({event.data})")
     
-    # 변경된 데이터에 따라 아두이노에 명령 전송
     if event.path == '/mode':
         mode = event.data
         if arduino and arduino.is_open:
@@ -88,47 +79,44 @@ def control_listener(event):
             arduino.write(command.encode())
             print(f"-> 아두이노 전송: {command.strip()}")
 
-# --- 3. 메인 로직 ---
+# --- 3. 프로그램 종료 시 호출될 함수 ---
+def set_offline():
+    if device_id and firebase_app:
+        print("\n--- 프로그램 종료. 연결 상태를 'offline'으로 변경합니다. ---")
+        try:
+            connection_ref = db.reference(f'devices/{device_id}/connection', app=firebase_app)
+            connection_ref.update({
+                'status': 'offline',
+                'last_seen': {'.sv': 'timestamp'}
+            })
+            print("✅ 연결 상태 업데이트 완료.")
+        except Exception as e:
+            print(f"❌ 종료 시 연결 상태 업데이트 실패: {e}")
+
+# --- 4. 메인 로직 ---
 def main():
-    global device_id, firebase_app, arduino
+    global device_id, firebase_app, arduino, listener # 전역 변수 listener 추가
     
-    script_dir = os.path.dirname(__file__)
+    atexit.register(set_offline)
 
-    # --- Debugging imports and paths ---
-    print(f"DEBUG --- firebase_admin.__file__: {firebase_admin.__file__}")
-    print(f"DEBUG --- firebase_admin.db.__file__: {db.__file__}")
-    # --- End debugging imports and paths ---
+    script_dir = os.path.dirname(os.path.abspath(__file__))
 
-    # --- 3-1. Firebase 초기화 (가장 먼저 실행되도록 위치 변경) ---
+    # --- 4-1. Firebase 초기화 ---
     try:
         key_path = os.path.join(script_dir, FIREBASE_KEY_FILE)
         cred = credentials.Certificate(key_path)
-        
         project_id = cred.project_id
         if not project_id:
             raise ValueError("서비스 계정 키 파일에서 project_id를 찾을 수 없습니다.")
-
         database_url = f'https://{project_id}-default-rtdb.firebaseio.com/'
-        
-        print(f"DEBUG --- Key Path: {key_path}")
-        print(f"DEBUG --- Project ID from cred: {project_id}")
-        print(f"DEBUG --- Constructed Database URL: {database_url}")
-        
         firebase_app = firebase_admin.initialize_app(cred, {'databaseURL': database_url})
         print("✅ Firebase 초기화 성공.")
-
-        if firebase_app is None:
-            print("ERROR: firebase_app is None after initialization. This should not happen.")
-            exit()
-        print(f"DEBUG --- Type of firebase_app after init: {type(firebase_app)}")
-
     except Exception as e:
         print(f"❌ Firebase 초기화 실패: {e}")
         exit()
 
-    # --- 3-2. 설정 파일 확인 및 최초 설정 실행 (Firebase 초기화 후에 실행) ---
+    # --- 4-2. 설정 파일 확인 및 최초 설정 실행 ---
     config_path = os.path.join(script_dir, CONFIG_FILE)
-
     if not os.path.exists(config_path):
         setup_device()
     else:
@@ -140,79 +128,78 @@ def main():
             exit()
         print(f"--- 일반 실행 모드 (기기 ID: {device_id}) ---")
 
-    # --- 3-3. Firebase 연결 상태 및 onDisconnect 설정 ---
-    print(f"DEBUG --- Current device_id for connection: {device_id}")
-    base_connection_path = f'devices/{device_id}/connection'
-    print(f"DEBUG --- Base connection path: {base_connection_path}")
+    # --- 4-3. Firebase 연결 상태 'online'으로 설정 ---
+    connection_ref = db.reference(f'devices/{device_id}/connection', app=firebase_app)
+    connection_ref.update({
+        'status': 'online',
+        'last_seen': {'.sv': 'timestamp'}
+    })
+    print("✅ Firebase 연결 상태 'online'으로 설정 완료.")
 
-    connection_ref = db.reference(base_connection_path, app=firebase_app) # app 인자 명시
-    
-    print(f"DEBUG --- Type of connection_ref (from db.reference()): {type(connection_ref)}")
-    if connection_ref is None:
-        print("ERROR: connection_ref is None after db.reference(). This is unexpected. Exiting.")
-        exit()
-
-    print(f"DEBUG --- Calling .child('status') on connection_ref...")
-    status_ref_child = connection_ref.child('status')
-
-    print(f"DEBUG --- Type of status_ref_child (after .child('status')): {type(status_ref_child)}")
-    if status_ref_child is None:
-        print("ERROR: status_ref_child is None after .child('status'). This is highly unusual. Exiting.")
-        exit()
-
-    # 이제 on_disconnect() 호출 시점에는 status_ref_child가 Reference 객체여야 합니다.
-    status_ref_child.on_disconnect().set('offline') # 유언 설정
-    
-    print(f"DEBUG --- Calling .child('last_seen') on connection_ref...")
-    last_seen_ref_child = connection_ref.child('last_seen')
-    print(f"DEBUG --- Type of last_seen_ref_child (after .child('last_seen')): {type(last_seen_ref_child)}")
-    if last_seen_ref_child is None:
-        print("ERROR: last_seen_ref_child is None after .child('last_seen'). Exiting.")
-        exit()
-    last_seen_ref_child.on_disconnect().set(firebase_admin.db.SERVER_TIMESTAMP) # 유언 설정
-    
-    print("✅ Firebase 연결 상태 'online'으로 설정 및 onDisconnect 규칙 설정 완료.")
-
-    # --- 3-4. Firebase 제어 데이터 리스너 시작 (별도 스레드에서) ---
-    control_ref = db.reference(f'devices/{device_id}/control', app=firebase_app) # app 인자 명시
-    control_ref.listen(control_listener)
+    # --- 4-4. Firebase 제어 데이터 리스너 시작 ---
+    control_ref = db.reference(f'devices/{device_id}/control', app=firebase_app)
+    # 리스너를 시작하고 반환된 객체를 listener 변수에 저장
+    listener = control_ref.listen(control_listener)
     print("📡 Firebase 제어 데이터 감시 시작...")
 
-    # --- 3-5. 아두이노 시리얼 연결 시도 ---
+    # --- 4-5. 아두이노 시리얼 연결 시도 ---
     try:
         arduino = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=1)
-        time.sleep(2) # 아두이노 리셋 대기
+        time.sleep(2)
         print(f"✅ 아두이노 연결 성공 ({ARDUINO_PORT})")
     except serial.SerialException as e:
         print(f"⚠️ 아두이노 연결 실패: {e}. 데이터 수신만 가능합니다.")
         arduino = None
 
-    # --- 3-6. 아두이노로부터 데이터 수신 및 Firebase에 업데이트 (메인 루프) ---
-    print("🔄 아두이노 데이터 수신 대기 시작...")
-    status_ref = db.reference(f'devices/{device_id}/status', app=firebase_app) # app 인자 명시
+    # --- 4-6. 메인 루프를 try...finally로 감싸서 항상 리소스를 해제하도록 변경 ---
+    try:
+        print("🔄 아두이노 데이터 수신 대기 시작...")
+        status_ref = db.reference(f'devices/{device_id}/status', app=firebase_app)
+        connection_ref = db.reference(f'devices/{device_id}/connection', app=firebase_app)
     
-    while True:
-        if arduino and arduino.in_waiting > 0:
-            try:
-                line = arduino.readline().decode('utf-8').strip()
-                if line.startswith("SENSORS:"):
-                    parts = line.split(":")[1].split(",")
-                    if len(parts) == 4:
-                        temps = [int(p) for p in parts]
-                        print(f"<- 아두이노 수신: {temps}")
-                        
-                        avg_temp = sum(temps) // len(temps)
-                        status_ref.update({
-                            'current_temp': avg_temp,
-                            'sensors/sensor_01/temp': temps[0],
-                            'sensors/sensor_02/temp': temps[1],
-                            'sensors/sensor_03/temp': temps[2],
-                            'sensors/sensor_04/temp': temps[3]
-                        })
-            except Exception as e:
-                print(f"아두이노 데이터 처리 중 오류: {e}")
+        last_heartbeat_time = time.time()
         
-        time.sleep(1) # 1초마다 확인
+        while True:
+            if arduino and arduino.in_waiting > 0:
+                try:
+                    line = arduino.readline().decode('utf-8').strip()
+                    if line.startswith("SENSORS:"):
+                        parts = line.split(":")[1].split(",")
+                        if len(parts) == 4:
+                            temps = [int(p) for p in parts]
+                            print(f"<- 아두이노 수신: {temps}")
+                            
+                            avg_temp = sum(temps) // len(temps)
+                            status_ref.update({
+                                'current_temp': avg_temp,
+                                'sensors/sensor_01/temp': temps[0],
+                                'sensors/sensor_02/temp': temps[1],
+                                'sensors/sensor_03/temp': temps[2],
+                                'sensors/sensor_04/temp': temps[3]
+                            })
+                except Exception as e:
+                    print(f"아두이노 데이터 처리 중 오류: {e}")
+            
+            # 60초마다 last_seen 업데이트
+            current_time = time.time()
+            if current_time - last_heartbeat_time > 10:
+                print("❤️ 하트비트 전송: last_seen 업데이트...")
+                connection_ref.child('last_seen').set({'.sv': 'timestamp'})
+                last_heartbeat_time = current_time
+
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\n프로그램을 종료합니다.")
+    finally:
+        # --- 여기가 핵심! ---
+        # 프로그램 종료 직전, 리스너 스레드를 명시적으로 종료합니다.
+        if listener:
+            print("Firebase 리스너를 종료합니다...")
+            listener.close()
+        # 아두이노 연결도 닫아주는 것이 좋습니다.
+        if arduino and arduino.is_open:
+            print("아두이노 연결을 닫습니다...")
+            arduino.close()
 
 # --- 프로그램 시작점 ---
 if __name__ == '__main__':

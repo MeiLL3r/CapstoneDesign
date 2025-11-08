@@ -40,6 +40,7 @@ class ControlActivity : AppCompatActivity() {
     // 리스너 관리를 위한 변수들
     private var controlStateListener: ValueEventListener? = null
     private var deviceStatusListener: ValueEventListener? = null
+    private var connectionStateListener: ValueEventListener? = null
 
     // 상태 메시지 관리를 위한 핸들러
     private val statusMessageHandler = Handler(Looper.getMainLooper())
@@ -48,6 +49,7 @@ class ControlActivity : AppCompatActivity() {
     // 센서 뷰 관리를 위한 리스트
     private val sensorViews = mutableListOf<TextView>()
 
+    private val OFFLINE_THRESHOLD_MS = 2 * 60 * 1000L // 2분 (밀리초 단위)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -71,6 +73,7 @@ class ControlActivity : AppCompatActivity() {
         // 2. 통합된 리스너 함수들 호출
         listenToControlState()
         listenToDeviceStatus()
+        listenToConnectionState()
 
         // '전송' 버튼 클릭 이벤트
         binding.buttonSendTemp.setOnClickListener {
@@ -149,6 +152,38 @@ class ControlActivity : AppCompatActivity() {
                 updateSensorReadings(newSensorDataMap, averageTemp)
             }
             override fun onCancelled(error: DatabaseError) { /* ... */ }
+        })
+    }
+
+    // --- 여기가 핵심! 기기 연결 상태를 감시하고, 오프라인이면 액티비티를 종료하는 리스너 ---
+    private fun listenToConnectionState() {
+        connectionStateListener = deviceRef.child("connection").addValueEventListener(object: ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                val statusFromDB = snapshot.child("status").getValue(String::class.java) ?: "offline"
+                val lastSeen = snapshot.child("last_seen").getValue(Long::class.java) ?: 0L
+
+                // MainActivity와 동일한 '감시자' 로직
+                val currentTime = System.currentTimeMillis()
+                val timeDifference = currentTime - lastSeen
+
+                val isEffectivelyOffline = if (statusFromDB == "online" && timeDifference > OFFLINE_THRESHOLD_MS) {
+                    // DB는 온라인이지만, 하트비트가 2분 이상 끊겼으면 오프라인으로 간주
+                    true
+                } else {
+                    // 그 외의 경우, DB 상태가 "offline"일 때만 오프라인으로 간주
+                    statusFromDB == "offline"
+                }
+
+                if (isEffectivelyOffline) {
+                    // 최종적으로 오프라인이라고 판단되면,
+                    Toast.makeText(applicationContext, "${binding.textViewDeviceName.text} 기기가 오프라인 상태가 되어 연결을 종료합니다.", Toast.LENGTH_LONG).show()
+                    finish() // 현재 액티비티를 종료
+                }
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Toast.makeText(applicationContext, "연결 상태 확인 실패: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
         })
     }
 
@@ -236,6 +271,7 @@ class ControlActivity : AppCompatActivity() {
 
         controlStateListener?.let { deviceRef.child("control").removeEventListener(it) }
         deviceStatusListener?.let { deviceRef.child("status").removeEventListener(it) }
+        connectionStateListener?.let { deviceRef.child("connection").removeEventListener(it) }
     }
 
     private fun updateStatusMessage(message: String, isSuccess: Boolean) {

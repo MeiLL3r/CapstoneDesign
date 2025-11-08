@@ -30,6 +30,8 @@ class MainActivity : AppCompatActivity() {
     // RecyclerView를 위한 어댑터와 데이터 리스트 선언
     private lateinit var deviceAdapter: DeviceAdapter
     private val deviceList = mutableListOf<Device>()
+    
+    private val OFFLINE_THRESHOLD_MS = 2 * 60 * 1000L // 2분 (밀리초 단위)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -152,18 +154,41 @@ class MainActivity : AppCompatActivity() {
     private fun fetchDevicesFromFirebase() {
         database.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                deviceList.clear() // 기존 목록을 비움
+                deviceList.clear()
                 for (deviceSnapshot in snapshot.children) {
-                    val deviceId = deviceSnapshot.key
-                    val deviceName = deviceSnapshot.child("name").value.toString()
-                    val deviceStatus = deviceSnapshot.child("connection").child("status").getValue(String::class.java) ?: "offline"
-                    val deviceMode = deviceSnapshot.child("control").child("mode").getValue(String::class.java) ?: "cooling"
-                    val deviceTargetTemp = deviceSnapshot.child("control").child("target_temp").getValue(Int::class.java) ?: 0
-                    if (deviceId != null) {
-                        deviceList.add(Device(id = deviceId, name = deviceName, status = deviceStatus, mode = deviceMode, targetTemp = deviceTargetTemp))
+                    // 1. Firebase에서 모든 관련 데이터를 안전하게 가져옵니다.
+                    val deviceId = deviceSnapshot.key ?: continue
+                    val deviceName = deviceSnapshot.child("name").getValue(String::class.java) ?: "Unknown"
+                    val statusFromDB = deviceSnapshot.child("connection/status").getValue(String::class.java) ?: "offline"
+                    val lastSeen = deviceSnapshot.child("connection/last_seen").getValue(Long::class.java) ?: 0L
+                    val deviceMode = deviceSnapshot.child("control/mode").getValue(String::class.java) ?: "cooling"
+                    val deviceTargetTemp = deviceSnapshot.child("control/target_temp").getValue(Int::class.java) ?: 0
+
+                    // 2. '감시자' 로직: lastSeen을 기반으로 실제 상태(effectiveStatus)를 결정합니다.
+                    val currentTime = System.currentTimeMillis()
+                    val timeDifference = currentTime - lastSeen
+
+                    val effectiveStatus = if (statusFromDB == "online" && timeDifference > OFFLINE_THRESHOLD_MS) {
+                        // DB 상태는 '온라인'이지만, 마지막 접속 시간이 일정 시간을 넘었으면 '오프라인'으로 강제 판단
+                        "offline"
+                    } else {
+                        // 그 외의 경우는 DB에 기록된 상태를 그대로 사용
+                        statusFromDB
                     }
+
+                    // 3. 최종적으로 판단된 상태(effectiveStatus)를 사용하여 Device 객체를 생성합니다.
+                    val device = Device(
+                        id = deviceId,
+                        name = deviceName,
+                        status = effectiveStatus, // DB 상태가 아닌, 최종 판단된 상태를 사용
+                        lastSeen = lastSeen,
+                        mode = deviceMode,
+                        targetTemp = deviceTargetTemp
+                    )
+                    deviceList.add(device)
                 }
-                // 빈 화면 안내 문구 처리
+
+                // 빈 화면 안내 문구 처리 (기존 코드와 동일)
                 if (deviceList.isEmpty()) {
                     binding.recyclerViewDevices.visibility = View.GONE
                     binding.textViewEmpty.visibility = View.VISIBLE
@@ -172,8 +197,7 @@ class MainActivity : AppCompatActivity() {
                     binding.textViewEmpty.visibility = View.GONE
                 }
 
-
-                deviceAdapter.notifyDataSetChanged() // 어댑터에게 데이터가 변경되었음을 알려 UI 갱신
+                deviceAdapter.notifyDataSetChanged()
             }
 
             override fun onCancelled(error: DatabaseError) {
@@ -276,7 +300,8 @@ class MainActivity : AppCompatActivity() {
 data class Device(
     val id: String? = null,
     val name: String? = null,
-    val status: String? = "offline", // 기본값은 "offline"
+    var status: String? = "offline", // 기본값은 "offline"
+    val lastSeen: Long = 0L,
     val mode: String? = "cooling",
     val targetTemp: Int? = 0
 )
