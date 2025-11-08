@@ -1,0 +1,282 @@
+package com.example.test3
+
+import android.os.Bundle
+import android.widget.EditText
+import android.widget.Toast
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
+import android.graphics.RectF
+import android.view.View
+import androidx.core.content.ContextCompat
+import androidx.appcompat.app.AlertDialog
+import androidx.appcompat.app.AppCompatActivity
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.ItemTouchHelper
+import androidx.recyclerview.widget.RecyclerView
+import com.example.test3.databinding.ActivityMainBinding
+import com.google.firebase.database.DataSnapshot
+import com.google.firebase.database.DatabaseError
+import com.google.firebase.database.DatabaseReference
+import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.ktx.database
+import com.google.firebase.ktx.Firebase
+
+class MainActivity : AppCompatActivity() {
+
+    private lateinit var binding: ActivityMainBinding
+    private lateinit var database: DatabaseReference
+
+    // RecyclerView를 위한 어댑터와 데이터 리스트 선언
+    private lateinit var deviceAdapter: DeviceAdapter
+    private val deviceList = mutableListOf<Device>()
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        binding = ActivityMainBinding.inflate(layoutInflater)
+        setContentView(binding.root)
+
+        // Firebase 데이터베이스의 "devices" 경로를 참조
+        database = Firebase.database.reference.child("devices")
+
+        // 1. RecyclerView 설정
+        setupRecyclerView()
+
+        // 2. Firebase에서 기기 목록 실시간으로 불러오기
+        fetchDevicesFromFirebase()
+
+        // 3. 새 기기 등록 버튼 (FAB) 클릭 이벤트
+        binding.fabAddDevice.setOnClickListener {
+            showAddDeviceDialog()
+        }
+    }
+
+    // RecyclerView를 초기화하고 어댑터와 연결하는 함수
+    private fun setupRecyclerView() {
+        // 어댑터 초기화. this(MainActivity)를 context로, deviceList를 데이터로 전달
+        deviceAdapter = DeviceAdapter(this, deviceList)
+        binding.recyclerViewDevices.adapter = deviceAdapter
+        binding.recyclerViewDevices.layoutManager = LinearLayoutManager(this)
+
+        // 스와이프 삭제 기능을 RecyclerView에 연결하는 코드
+        val itemTouchHelperCallback = object : ItemTouchHelper.SimpleCallback(
+            0, ItemTouchHelper.LEFT or ItemTouchHelper.RIGHT
+        ) {
+            override fun onMove(
+                recyclerView: RecyclerView,
+                viewHolder: RecyclerView.ViewHolder,
+                target: RecyclerView.ViewHolder
+            ): Boolean {
+                return false // 드래그 앤 드롭은 사용 안 함
+            }
+
+            override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
+                val position = viewHolder.adapterPosition
+                val device = deviceList[position]
+
+                if (direction == ItemTouchHelper.LEFT) {
+                    // 오른쪽 -> 왼쪽 스와이프 (삭제 기능)
+                    showDeleteDialog(device, position)
+                } else if (direction == ItemTouchHelper.RIGHT) {
+                    // 왼쪽 -> 오른쪽 스와이프 (수정 기능)
+                    showEditDialog(device, position)
+                }
+            }
+
+            override fun onChildDraw(
+                c: Canvas, recyclerView: RecyclerView, viewHolder: RecyclerView.ViewHolder,
+                dX: Float, dY: Float, actionState: Int, isCurrentlyActive: Boolean
+            ) {
+
+                // 1. 필요한 리소스와 페인트 객체 준비
+                val itemView = viewHolder.itemView
+                val iconDelete = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_delete)
+                val iconEdit = ContextCompat.getDrawable(this@MainActivity, R.drawable.ic_edit)
+
+                val paint = Paint()
+                val cornerRadius = 20f // CardView의 곡률과 비슷하게 설정 (8dp -> 20f 정도)
+
+                if (dX < 0) { // 오른쪽 -> 왼쪽 스와이프 (삭제)
+                    // 2. 빨간색 둥근 사각형 배경 그리기
+                    paint.color = Color.RED
+                    val background = RectF(
+                        itemView.right.toFloat() + dX,
+                        itemView.top.toFloat(),
+                        itemView.right.toFloat(),
+                        itemView.bottom.toFloat()
+                    )
+                    c.drawRoundRect(background, cornerRadius, cornerRadius, paint)
+
+                    // 3. 휴지통 아이콘 그리기
+                    iconDelete?.let { icon ->
+                        val iconMargin = (itemView.height - icon.intrinsicHeight) / 2
+                        val iconTop = itemView.top + iconMargin
+                        val iconBottom = iconTop + icon.intrinsicHeight
+                        val iconLeft = itemView.right - iconMargin - icon.intrinsicWidth
+                        val iconRight = itemView.right - iconMargin
+                        icon.setBounds(iconLeft, iconTop, iconRight, iconBottom)
+                        icon.draw(c)
+                    }
+
+                } else if (dX > 0) { // 왼쪽 -> 오른쪽 스와이프 (수정)
+                    // 2. 파란색 둥근 사각형 배경 그리기
+                    paint.color = Color.BLUE
+                    val background = RectF(
+                        itemView.left.toFloat(),
+                        itemView.top.toFloat(),
+                        itemView.left.toFloat() + dX,
+                        itemView.bottom.toFloat()
+                    )
+                    c.drawRoundRect(background, cornerRadius, cornerRadius, paint)
+
+                    // 3. 수정 아이콘 그리기
+                    iconEdit?.let { icon ->
+                        val iconMargin = (itemView.height - icon.intrinsicHeight) / 2
+                        val iconTop = itemView.top + iconMargin
+                        val iconBottom = iconTop + icon.intrinsicHeight
+                        val iconLeft = itemView.left + iconMargin
+                        val iconRight = itemView.left + iconMargin + icon.intrinsicWidth
+                        icon.setBounds(iconLeft, iconTop, iconRight, iconBottom)
+                        icon.draw(c)
+                    }
+
+                }
+
+                super.onChildDraw(c, recyclerView, viewHolder, dX, dY, actionState, isCurrentlyActive)
+            }
+        }
+        ItemTouchHelper(itemTouchHelperCallback).attachToRecyclerView(binding.recyclerViewDevices)
+    }
+
+    // Firebase에서 기기 목록을 가져와 deviceList를 업데이트하는 함수
+    private fun fetchDevicesFromFirebase() {
+        database.addValueEventListener(object : ValueEventListener {
+            override fun onDataChange(snapshot: DataSnapshot) {
+                deviceList.clear() // 기존 목록을 비움
+                for (deviceSnapshot in snapshot.children) {
+                    val deviceId = deviceSnapshot.key
+                    val deviceName = deviceSnapshot.child("name").value.toString()
+                    val deviceStatus = deviceSnapshot.child("connection").child("status").getValue(String::class.java) ?: "offline"
+                    val deviceMode = deviceSnapshot.child("control").child("mode").getValue(String::class.java) ?: "cooling"
+                    val deviceTargetTemp = deviceSnapshot.child("control").child("target_temp").getValue(Int::class.java) ?: 0
+                    if (deviceId != null) {
+                        deviceList.add(Device(id = deviceId, name = deviceName, status = deviceStatus, mode = deviceMode, targetTemp = deviceTargetTemp))
+                    }
+                }
+                // 빈 화면 안내 문구 처리
+                if (deviceList.isEmpty()) {
+                    binding.recyclerViewDevices.visibility = View.GONE
+                    binding.textViewEmpty.visibility = View.VISIBLE
+                } else {
+                    binding.recyclerViewDevices.visibility = View.VISIBLE
+                    binding.textViewEmpty.visibility = View.GONE
+                }
+
+
+                deviceAdapter.notifyDataSetChanged() // 어댑터에게 데이터가 변경되었음을 알려 UI 갱신
+            }
+
+            override fun onCancelled(error: DatabaseError) {
+                Toast.makeText(baseContext, "데이터 로딩 실패: ${error.message}", Toast.LENGTH_SHORT).show()
+            }
+        })
+    }
+
+    // 새 기기를 등록하는 팝업창을 띄우는 함수
+    private fun showAddDeviceDialog() {
+        val builder = AlertDialog.Builder(this)
+        // dialog_add_device.xml 레이아웃이 필요합니다.
+        val dialogView = layoutInflater.inflate(R.layout.dialog_add_device, null)
+        val editTextDeviceId = dialogView.findViewById<EditText>(R.id.editTextDeviceId)
+        val editTextDeviceName = dialogView.findViewById<EditText>(R.id.editTextDeviceName)
+
+        builder.setView(dialogView)
+            .setTitle("새 기기 등록")
+            .setPositiveButton("등록") { dialog, _ ->
+                val deviceId = editTextDeviceId.text.toString().trim()
+                val deviceName = editTextDeviceName.text.toString().trim()
+                if (deviceId.isNotEmpty() && deviceName.isNotEmpty()) {
+                    // Firebase에 새 기기 데이터 생성
+                    val newDevice = mapOf("name" to deviceName, "control" to mapOf("target_temp" to 0, "power_on" to false))
+                    database.child(deviceId).setValue(newDevice)
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("취소") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    // 삭제 확인 팝업창 함수
+    private fun showDeleteDialog(device: Device, position: Int) {
+        AlertDialog.Builder(this)
+            .setTitle("기기 삭제")
+            .setMessage("'${device.name}' 기기를 정말로 삭제하시겠습니까?")
+            .setIcon(android.R.drawable.ic_dialog_alert)
+            .setPositiveButton("삭제") { _, _ ->
+                device.id?.let { deviceId ->
+                    database.child(deviceId).removeValue()
+                        .addOnSuccessListener {
+                            Toast.makeText(this, "'${device.name}' 기기가 삭제되었습니다.", Toast.LENGTH_SHORT).show()
+                        }
+                        .addOnFailureListener {
+                            deviceAdapter.notifyItemChanged(position)
+                            Toast.makeText(this, "삭제 실패: ${it.message}", Toast.LENGTH_SHORT).show()
+                        }
+                }
+            }
+            .setNegativeButton("취소") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setCancelable(false)
+            .setOnDismissListener {
+                // 다이얼로그가 어떤 이유로든 닫힐 때 아이템 뷰를 원래대로 되돌림
+                deviceAdapter.notifyItemChanged(position)
+            }
+            .show()
+    }
+
+    // 수정 팝업창 함수
+    private fun showEditDialog(device: Device, position: Int) {
+        val builder = AlertDialog.Builder(this)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_add_device, null) // 기존 등록 팝업창 재활용
+        val editTextDeviceId = dialogView.findViewById<EditText>(R.id.editTextDeviceId)
+        val editTextDeviceName = dialogView.findViewById<EditText>(R.id.editTextDeviceName)
+
+        // 기존 기기 정보를 팝업창에 미리 채워넣음
+        editTextDeviceId.setText(device.id)
+        editTextDeviceId.isEnabled = false // 기기 ID는 수정할 수 없도록 비활성화
+        editTextDeviceName.setText(device.name)
+
+        builder.setView(dialogView)
+            .setTitle("기기 정보 수정")
+            .setPositiveButton("저장") { dialog, _ ->
+                val newDeviceName = editTextDeviceName.text.toString().trim()
+                if (newDeviceName.isNotEmpty()) {
+                    // Firebase의 해당 기기 경로에서 'name' 필드만 업데이트
+                    device.id?.let { deviceId ->
+                        database.child(deviceId).child("name").setValue(newDeviceName)
+                    }
+                }
+                dialog.dismiss()
+            }
+            .setNegativeButton("취소") { dialog, _ ->
+                dialog.dismiss()
+            }
+            .setOnDismissListener {
+                // 다이얼로그가 닫힐 때 아이템 뷰를 원래대로 되돌림
+                deviceAdapter.notifyItemChanged(position)
+            }
+            .show()
+    }
+}
+
+// Device 데이터를 담을 데이터 클래스
+data class Device(
+    val id: String? = null,
+    val name: String? = null,
+    val status: String? = "offline", // 기본값은 "offline"
+    val mode: String? = "cooling",
+    val targetTemp: Int? = 0
+)

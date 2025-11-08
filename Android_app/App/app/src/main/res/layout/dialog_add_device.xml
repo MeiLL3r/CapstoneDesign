@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:paddingStart="24dp"
+    android:paddingTop="20dp"
+    android:paddingEnd="24dp"
+    android:paddingBottom="20dp">
+
+    <!-- 기기 고유번호 입력창 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="기기 고유번호"
+        android:labelFor="@id/editTextDeviceId"/>
+
+    <EditText
+        android:id="@+id/editTextDeviceId"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="기기의 고유번호를 입력하세요"
+        android:inputType="text"
+        android:autofillHints="name" />
+
+    <!-- 기기 별명 입력창 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="기기 별명"
+        android:labelFor="@id/editTextDeviceName"/>
+
+    <EditText
+        android:id="@+id/editTextDeviceName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:hint="식별하기 쉬운 별명을 지어주세요"
+        android:inputType="text"
+        android:autofillHints="name" />
+
+</LinearLayout>

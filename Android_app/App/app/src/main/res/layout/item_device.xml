@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="8dp"
+    android:layout_marginTop="8dp"
+    android:layout_marginEnd="8dp"
+    app:cardCornerRadius="8dp"
+    app:cardElevation="4dp">
+
+    <androidx.constraintlayout.widget.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:padding="16dp">
+
+        <!-- 기기 이름 -->
+        <TextView
+            android:id="@+id/textViewDeviceName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:text="내 작업복"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/statusIndicatorView"
+            android:layout_marginEnd="16dp"/>
+
+        <!-- 기기 ID -->
+        <TextView
+            android:id="@+id/textViewDeviceId"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="DEVICE_ID_12345"
+            android:textSize="14sp"
+            android:textColor="@android:color/darker_gray"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/textViewDeviceName"
+            android:layout_marginTop="4dp"/>
+
+        <!-- 전원 상태 표시 (동그란 점) -->
+        <View
+            android:id="@+id/statusIndicatorView"
+            android:layout_width="12dp"
+            android:layout_height="12dp"
+            android:background="@drawable/shape_status_offline"
+            app:layout_constraintEnd_toStartOf="@+id/textViewStatus"
+            app:layout_constraintTop_toTopOf="@+id/textViewStatus"
+            app:layout_constraintBottom_toBottomOf="@+id/textViewStatus"
+            android:layout_marginEnd="8dp"/>
+
+        <!-- 전원 상태 텍스트 (온라인/오프라인) -->
+        <TextView
+            android:id="@+id/textViewStatus"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="연결 안 됨"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
+
+        <!-- 구분선 -->
+        <View
+            android:id="@+id/divider"
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_marginTop="16dp"
+            android:background="?android:attr/listDivider"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/textViewDeviceId" />
+
+        <!-- 목표 온도 표시 -->
+        <TextView
+            android:id="@+id/textViewInfoTargetTemp"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:textStyle="bold"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@id/divider"
+            tools:text="목표: -- °C" />
+
+        <!-- 모드 표시 -->
+        <TextView
+            android:id="@+id/textViewInfoMode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:textStyle="bold"
+            app:layout_constraintStart_toEndOf="@id/textViewInfoTargetTemp"
+            app:layout_constraintTop_toTopOf="@id/textViewInfoTargetTemp"
+            tools:text="모드: 냉방" />
+
+    </androidx.constraintlayout.widget.ConstraintLayout>
+</androidx.cardview.widget.CardView>

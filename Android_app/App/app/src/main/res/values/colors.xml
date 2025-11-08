@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="black">#FF000000</color>
+    <color name="white">#FFFFFFFF</color>
+    <color name="cooling_blue">#2196F3</color> <!-- 시원한 파란색 -->
+    <color name="heating_red">#F44336</color>  <!-- 따뜻한 빨간색 -->
+    <color name="temp_high">#FF5722</color>  <!-- 주황색 계열 (평균보다 높을 때) -->
+    <color name="temp_normal">#80FFFFFF</color> <!-- 기존 반투명 흰색 (평균과 비슷할 때) -->
+    <color name="temp_low">#03A9F4</color>   <!-- 하늘색 계열 (평균보다 낮을 때) -->
+</resources>
