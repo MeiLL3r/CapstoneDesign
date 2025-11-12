@@ -12,15 +12,15 @@
         android:id="@+id/textViewDeviceName"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="32dp"
-        android:text="내 작업복"
+        android:layout_marginTop="24dp"
         android:textSize="24sp"
         android:textStyle="bold"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintTop_toTopOf="parent"
+        tools:text="내 작업복" />
 
-    <!-- 센서 디스플레이  -->
+    <!-- 센서 디스플레이 영역 -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/sensorDisplayContainer"
         android:layout_width="0dp"
@@ -46,7 +46,7 @@
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <!-- 현재 온도 및 희망 온도 표시 카드 -->
+    <!-- 평균 현재 온도 및 희망 온도 표시 카드 -->
     <androidx.cardview.widget.CardView
         android:id="@+id/cardViewTempDisplay"
         android:layout_width="0dp"
@@ -63,9 +63,9 @@
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
+            android:baselineAligned="false"
             android:orientation="horizontal"
-            android:padding="20dp"
-            android:baselineAligned="false">
+            android:padding="20dp">
 
             <!-- 현재 온도 패널 -->
             <LinearLayout
@@ -78,7 +78,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="현재 평균 온도"
+                    android:text="현재 평균"
                     android:textSize="18sp" />
 
                 <TextView
@@ -86,17 +86,17 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="-- °C"
-                    android:textSize="40sp"
-                    android:textStyle="bold" />
+                    android:textSize="32sp"
+                    android:textStyle="bold"
+                    tools:text="-- °C" />
             </LinearLayout>
 
             <View
                 android:layout_width="1dp"
                 android:layout_height="match_parent"
-                android:background="@android:color/darker_gray"
                 android:layout_marginStart="10dp"
-                android:layout_marginEnd="10dp"/>
+                android:layout_marginEnd="10dp"
+                android:background="@android:color/darker_gray" />
 
             <!-- 희망 온도 패널 -->
             <LinearLayout
@@ -107,10 +107,9 @@
                 android:orientation="vertical">
 
                 <TextView
-                    android:id="@+id/labelTargetTempDisplay"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="희망 평균 온도"
+                    android:text="상태"
                     android:textSize="18sp" />
 
                 <TextView
@@ -118,68 +117,67 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_marginTop="8dp"
-                    android:text="-- °C"
-                    android:textSize="40sp"
-                    android:textStyle="bold" />
+                    android:textSize="32sp"
+                    android:textStyle="bold"
+                    tools:text="개별 설정" />
             </LinearLayout>
         </LinearLayout>
     </androidx.cardview.widget.CardView>
 
-    <!-- 목표 온도 설정 패널 -->
+    <!-- 현재 적용된 프리셋 정보 표시 -->
     <TextView
-        android:id="@+id/labelTargetTemp"
+        android:id="@+id/labelCurrentPreset"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:layout_marginTop="48dp"
-        android:text="목표 온도 설정 (18°C ~ 26°C)"
-        android:textSize="18sp"
-        app:layout_constraintStart_toStartOf="@id/cardViewTempDisplay"
+        android:layout_marginStart="24dp"
+        android:layout_marginTop="16dp"
+        android:text="현재 적용된 설정:"
+        android:textSize="16sp"
+        app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toBottomOf="@id/cardViewTempDisplay" />
 
-    <EditText
-        android:id="@+id/editTextTargetTemp"
-        android:layout_width="0dp"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="16dp"
-        android:layout_marginEnd="16dp"
-        android:hint="온도 입력"
-        android:inputType="number"
-        android:maxLength="2"
-        android:textAlignment="center"
-        android:textSize="20sp"
-        app:layout_constraintEnd_toStartOf="@+id/buttonSendTemp"
-        app:layout_constraintStart_toStartOf="@id/labelTargetTemp"
-        app:layout_constraintTop_toBottomOf="@id/labelTargetTemp" />
-
-    <Button
-        android:id="@+id/buttonSendTemp"
-        android:layout_width="wrap_content"
-        android:layout_height="0dp"
-        android:text="전송"
-        app:layout_constraintBottom_toBottomOf="@id/editTextTargetTemp"
-        app:layout_constraintEnd_toEndOf="@id/cardViewTempDisplay"
-        app:layout_constraintTop_toTopOf="@id/editTextTargetTemp" />
-
-    <com.google.android.material.switchmaterial.SwitchMaterial
-        android:id="@+id/switchMode"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_marginTop="50dp"
-        android:text="냉방  "
-        android:textSize="18sp"
-        app:layout_constraintStart_toStartOf="@id/editTextTargetTemp"
-        app:layout_constraintTop_toBottomOf="@id/editTextTargetTemp" />
-
     <TextView
-        android:id="@+id/textViewStatusMessage"
+        android:id="@+id/textViewCurrentPresetName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:textSize="16sp"
+        android:textStyle="bold"
+        app:layout_constraintBaseline_toBaselineOf="@id/labelCurrentPreset"
+        app:layout_constraintStart_toEndOf="@id/labelCurrentPreset"
+        tools:text="일상 모드" />
+
+    <!-- 하단 버튼 영역 -->
+    <LinearLayout
+        android:id="@+id/buttonContainer"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_marginTop="50dp"
-        android:textAlignment="center"
-        android:textSize="14sp"
-        app:layout_constraintEnd_toEndOf="@id/buttonSendTemp"
-        app:layout_constraintStart_toStartOf="@id/switchMode"
-        app:layout_constraintTop_toBottomOf="@id/switchMode"
-        tools:text="상태 메시지가 여기에 표시됩니다." />
+        android:orientation="horizontal"
+        android:layout_marginStart="24dp"
+        android:layout_marginEnd="24dp"
+        android:layout_marginBottom="24dp"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent">
+
+        <!-- 프리셋 관리 버튼 -->
+        <Button
+            android:id="@+id/buttonManagePresets"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="설정 관리" />
+
+        <!-- 현재 설정 저장 버튼 -->
+        <Button
+            android:id="@+id/buttonSaveAsPreset"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:layout_weight="1"
+            android:text="현재 설정을 프리셋으로 저장" />
+
+    </LinearLayout>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

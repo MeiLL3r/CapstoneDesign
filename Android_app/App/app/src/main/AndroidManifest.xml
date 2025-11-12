@@ -23,6 +23,9 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Test3">
         <activity
+            android:name=".PresetsActivity"
+            android:exported="false" />
+        <activity
             android:name=".ControlActivity"
             android:exported="false" />
         <activity

@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- 센서 이름 표시 -->
+    <TextView
+        android:id="@+id/textViewSensorName"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:textSize="20sp"
+        android:textStyle="bold"
+        tools:text="왼쪽 팔" />
+
+    <!-- 냉방/난방 모드 스위치 -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchDialogMode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="24dp"
+        android:text="냉방"
+        android:textSize="18sp" />
+
+    <!-- OFF 모드 스위치 -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/switchDialogOff"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="16dp"
+        android:text="끄기 (Off)"
+        android:textSize="18sp" />
+
+    <!-- 온도 조절 라벨 및 SeekBar -->
+    <TextView
+        android:id="@+id/labelDialogTargetTemp"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        tools:text="목표 온도: 22°C" />
+
+    <SeekBar
+        android:id="@+id/seekBarTargetTemp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:max="30"
+        tools:progress="12"/>
+
+    <!-- 하단 버튼 (취소, 저장) -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="24dp"
+        android:gravity="end"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/buttonDialogCancel"
+            style="?attr/materialButtonOutlinedStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="취소" />
+
+        <Button
+            android:id="@+id/buttonDialogSave"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="16dp"
+            android:text="저장" />
+
+    </LinearLayout>
+
+</LinearLayout>

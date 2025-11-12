@@ -1,29 +1,31 @@
 package com.example.test3
 
+import android.content.Intent
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.View
+import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.constraintlayout.widget.ConstraintLayout
 import androidx.constraintlayout.widget.ConstraintSet
 import androidx.core.content.ContextCompat
 import com.example.test3.databinding.ActivityControlBinding
-import com.google.firebase.database.DataSnapshot
-import com.google.firebase.database.DatabaseError
-import com.google.firebase.database.DatabaseReference
-import com.google.firebase.database.ValueEventListener
+import com.google.firebase.database.*
 import com.google.firebase.database.ktx.database
 import com.google.firebase.ktx.Firebase
 
-data class SensorData(
+// 센서 디스플레이와 제어에 필요한 모든 정보를 담는 데이터 클래스
+data class SensorDisplayData(
+    val id: String,
     val name: String? = null,
-    val temp: Long? = 0,
+    val currentTemp: Long? = 0,
+    val targetTemp: Long? = 0,
+    val mode: String? = "cooling",
     val posX: Double? = 0.0,
     val posY: Double? = 0.0
 )
@@ -31,25 +33,18 @@ data class SensorData(
 class ControlActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityControlBinding
-    private lateinit var deviceRef: DatabaseReference // ★ 기기 전체 경로를 가리킬 메인 참조 변수
+    private lateinit var deviceRef: DatabaseReference // 기기의 최상위 경로 참조
     private var deviceId: String? = null
 
-    private val MIN_TEMP = 18
-    private val MAX_TEMP = 26
-
     // 리스너 관리를 위한 변수들
-    private var controlStateListener: ValueEventListener? = null
-    private var deviceStatusListener: ValueEventListener? = null
+    private var deviceDataListener: ValueEventListener? = null
     private var connectionStateListener: ValueEventListener? = null
-
-    // 상태 메시지 관리를 위한 핸들러
-    private val statusMessageHandler = Handler(Looper.getMainLooper())
-    private var statusMessageRunnable: Runnable? = null
 
     // 센서 뷰 관리를 위한 리스트
     private val sensorViews = mutableListOf<TextView>()
 
-    private val OFFLINE_THRESHOLD_MS = 2 * 60 * 1000L // 2분 (밀리초 단위)
+    // 하트비트 체크를 위한 상수 (2분)
+    private val OFFLINE_THRESHOLD_MS = 2 * 60 * 1000L
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -66,230 +61,197 @@ class ControlActivity : AppCompatActivity() {
         }
 
         binding.textViewDeviceName.text = deviceName
-
-        // 1. deviceRef를 기기의 최상위 경로로 초기화 (가장 중요!)
         deviceRef = Firebase.database.reference.child("devices").child(deviceId!!)
 
-        // 2. 통합된 리스너 함수들 호출
-        listenToControlState()
-        listenToDeviceStatus()
+        // 리스너 함수들 호출
+        listenToDeviceChanges()
         listenToConnectionState()
 
-        // '전송' 버튼 클릭 이벤트
-        binding.buttonSendTemp.setOnClickListener {
-            val tempString = binding.editTextTargetTemp.text.toString()
-            if (tempString.isNotEmpty()) {
-                val tempInt = tempString.toIntOrNull()
-                if (tempInt != null && tempInt in MIN_TEMP..MAX_TEMP) {
-                    // 3. deviceRef를 기준으로 올바른 경로에 값을 씀
-                    deviceRef.child("control").child("target_temp").setValue(tempInt)
-                        .addOnSuccessListener {
-                            updateStatusMessage("✅ 목표 온도가 전송되었습니다.", true)
-                            binding.editTextTargetTemp.text.clear()
-                        }
-                        .addOnFailureListener {
-                            updateStatusMessage("❌ 전송 실패: ${it.message}", false)
-                        }
-                } else {
-                    Toast.makeText(this, "온도는 $MIN_TEMP°C에서 $MAX_TEMP°C 사이로 입력해주세요.", Toast.LENGTH_SHORT).show()
-                }
-            } else {
-                Toast.makeText(this, "온도를 입력해주세요.", Toast.LENGTH_SHORT).show()
+        // --- 프리셋 기능 버튼 리스너 ---
+        binding.buttonManagePresets.setOnClickListener {
+            val intent = Intent(this, PresetsActivity::class.java).apply {
+                putExtra("DEVICE_ID", deviceId)
             }
+            startActivity(intent)
         }
 
-        // '냉방/난방' 스위치 이벤트 리스너
-        binding.switchMode.setOnCheckedChangeListener { _, isChecked ->
-            val mode = if (isChecked) "heating" else "cooling"
-            // 4. deviceRef를 기준으로 올바른 경로에 값을 씀
-            deviceRef.child("control").child("mode").setValue(mode)
-            if (isChecked) {
-                updateStatusMessage("🔥 난방 모드로 설정되었습니다.", true)
-            } else {
-                updateStatusMessage("❄️ 냉방 모드로 설정되었습니다.", true)
-            }
+        binding.buttonSaveAsPreset.setOnClickListener {
+            showSavePresetDialog()
         }
     }
 
-    // 제어 상태(희망 온도, 모드)만 감시하는 리스너
-    private fun listenToControlState() {
-        // 5. deviceRef를 기준으로 올바른 경로를 감시
-        controlStateListener = deviceRef.child("control").addValueEventListener(object : ValueEventListener {
+    // status와 control 데이터를 모두 읽어와 UI를 업데이트하는 통합 리스너
+    private fun listenToDeviceChanges() {
+        deviceDataListener = deviceRef.addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val targetTemp = snapshot.child("target_temp").getValue(Long::class.java)?.toInt() ?: 0
-                val mode = snapshot.child("mode").getValue(String::class.java) ?: "cooling"
-                binding.textViewTargetTempDisplay.text = "$targetTemp °C"
-                updateModeUI(mode)
+                try {
+                    // 현재 적용된 프리셋 이름 표시
+                    val presetAppliedId = snapshot.child("control/preset_applied").getValue(String::class.java)
+                    val presetName = presetAppliedId?.let { snapshot.child("presets/$it/name").getValue(String::class.java) }
+                    binding.textViewCurrentPresetName.text = presetName ?: "사용자 설정"
+
+                    // 센서 데이터 종합 및 디스플레이 업데이트
+                    val statusNode = snapshot.child("status")
+                    val controlNode = snapshot.child("control")
+                    val sensorsStatusNode = statusNode.child("sensors")
+                    val sensorsControlNode = controlNode.child("sensors")
+
+                    val sensorDisplayList = mutableListOf<SensorDisplayData>()
+                    for (statusChild in sensorsStatusNode.children) {
+                        val sensorId = statusChild.key ?: continue
+                        if (!sensorsControlNode.hasChild(sensorId)) {
+                            Log.w("ControlActivity", "데이터 불일치: control 경로에 '$sensorId'가 없습니다.")
+                            continue
+                        }
+                        val controlChild = sensorsControlNode.child(sensorId)
+
+                        sensorDisplayList.add(
+                            SensorDisplayData(
+                                id = sensorId,
+                                name = statusChild.child("name").getValue(String::class.java) ?: "N/A",
+                                currentTemp = statusChild.child("temp").getValue(Long::class.java) ?: 0L,
+                                targetTemp = controlChild.child("target_temp").getValue(Long::class.java) ?: 0L,
+                                mode = controlChild.child("mode").getValue(String::class.java) ?: "off",
+                                posX = statusChild.child("posX").getValue(Double::class.java) ?: 0.0,
+                                posY = statusChild.child("posY").getValue(Double::class.java) ?: 0.0
+                            )
+                        )
+                    }
+
+                    val averageTemp = statusNode.child("current_temp").getValue(Long::class.java)?.toInt() ?: 0
+                    binding.textViewCurrentTemp.text = "$averageTemp °C"
+                    binding.textViewTargetTempDisplay.text = "개별 설정"
+
+                    updateSensorReadings(sensorDisplayList, averageTemp)
+
+                } catch (e: Exception) {
+                    Log.e("ControlActivity", "onDataChange 처리 중 오류 발생!", e)
+                    Toast.makeText(baseContext, "데이터 처리 중 오류가 발생했습니다.", Toast.LENGTH_SHORT).show()
+                }
             }
             override fun onCancelled(error: DatabaseError) {
-                updateStatusMessage("제어 데이터 로딩 실패: ${error.message}", false)
+                Log.e("ControlActivity", "Firebase 데이터 로딩 실패: ${error.message}", error.toException())
+                Toast.makeText(baseContext, "데이터 로딩 실패: ${error.message}", Toast.LENGTH_LONG).show()
             }
         })
     }
 
-    // 기기 상태(현재 온도, 센서들)만 감시하는 리스너
-    private fun listenToDeviceStatus() {
-        deviceStatusListener = deviceRef.child("status").addValueEventListener(object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                // 1. 평균 현재 온도를 먼저 가져옵니다.
-                val averageTemp = snapshot.child("current_temp").getValue(Long::class.java)?.toInt() ?: 0
-                binding.textViewCurrentTemp.text = "$averageTemp °C"
-
-                val sensorsSnapshot = snapshot.child("sensors")
-                val newSensorDataMap = mutableMapOf<String, SensorData>()
-                for (sensorChild in sensorsSnapshot.children) {
-                    try {
-                        val sensorData = sensorChild.getValue(SensorData::class.java)
-                        if (sensorData != null) {
-                            newSensorDataMap[sensorChild.key!!] = sensorData
-                        }
-                    } catch (e: Exception) {
-                        Log.e("ControlActivity", "Failed to parse sensor data: ${sensorChild.key}", e)
-                    }
-                }
-
-                // 2. 평균 온도를 updateSensorReadings 함수에 파라미터로 전달합니다.
-                updateSensorReadings(newSensorDataMap, averageTemp)
-            }
-            override fun onCancelled(error: DatabaseError) { /* ... */ }
-        })
-    }
-
-    // --- 여기가 핵심! 기기 연결 상태를 감시하고, 오프라인이면 액티비티를 종료하는 리스너 ---
+    // 기기 연결 상태를 감시하고, 오프라인이면 액티비티를 종료하는 리스너
     private fun listenToConnectionState() {
-        connectionStateListener = deviceRef.child("connection").addValueEventListener(object: ValueEventListener {
+        connectionStateListener = deviceRef.child("connection").addValueEventListener(object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val statusFromDB = snapshot.child("status").getValue(String::class.java) ?: "offline"
                 val lastSeen = snapshot.child("last_seen").getValue(Long::class.java) ?: 0L
-
-                // MainActivity와 동일한 '감시자' 로직
                 val currentTime = System.currentTimeMillis()
                 val timeDifference = currentTime - lastSeen
-
                 val isEffectivelyOffline = if (statusFromDB == "online" && timeDifference > OFFLINE_THRESHOLD_MS) {
-                    // DB는 온라인이지만, 하트비트가 2분 이상 끊겼으면 오프라인으로 간주
                     true
                 } else {
-                    // 그 외의 경우, DB 상태가 "offline"일 때만 오프라인으로 간주
                     statusFromDB == "offline"
                 }
 
                 if (isEffectivelyOffline) {
-                    // 최종적으로 오프라인이라고 판단되면,
                     Toast.makeText(applicationContext, "${binding.textViewDeviceName.text} 기기가 오프라인 상태가 되어 연결을 종료합니다.", Toast.LENGTH_LONG).show()
-                    finish() // 현재 액티비티를 종료
+                    finish()
                 }
             }
-
             override fun onCancelled(error: DatabaseError) {
                 Toast.makeText(applicationContext, "연결 상태 확인 실패: ${error.message}", Toast.LENGTH_SHORT).show()
             }
         })
     }
 
-    // 센서 데이터를 기반으로 TextView를 동적으로 생성/업데이트/삭제하는 함수
-    private fun updateSensorReadings(sensorDataMap: Map<String, SensorData>?, averageTemp: Int) {
-        // 1. 기존에 있던 센서 TextView들을 모두 제거
+    // 센서 뷰를 동적으로 생성하고 색상을 변경하는 함수
+    private fun updateSensorReadings(sensorDisplayList: List<SensorDisplayData>, averageTemp: Int) {
         sensorViews.forEach { binding.sensorDisplayContainer.removeView(it) }
         sensorViews.clear()
 
-        if (sensorDataMap == null) return
-
-        // 2. 새로운 센서 데이터로 TextView를 다시 생성하여 추가
-        sensorDataMap.values.forEach { sensorData ->
+        sensorDisplayList.forEach { sensorData ->
             val textView = TextView(this).apply {
-                id = View.generateViewId() // 제약조건을 위해 고유 ID 생성 (매우 중요!)
-                text = "${sensorData.temp}°"
-                textSize = 14f
-                val sizeInDp = 26 // 원하는 크기를 dp 단위로 설정
+                id = View.generateViewId()
+                text = "${sensorData.currentTemp}°"
+                textSize = 18f
+
+                val sizeInDp = 48
                 val scale = resources.displayMetrics.density
                 val sizeInPixels = (sizeInDp * scale + 0.5f).toInt()
-                val sensorTemp = sensorData.temp?.toInt() ?: 0
+                layoutParams = ConstraintLayout.LayoutParams(sizeInPixels, sizeInPixels)
+
+                val sensorTemp = sensorData.currentTemp?.toInt() ?: 0
                 val tempDifference = sensorTemp - averageTemp
                 val backgroundColor = when {
-                    tempDifference > 2 -> ContextCompat.getColor(this@ControlActivity, R.color.temp_high) // 평균보다 2도 초과로 높으면
-                    tempDifference < -2 -> ContextCompat.getColor(this@ControlActivity, R.color.temp_low) // 평균보다 2도 초과로 낮으면
-                    else -> ContextCompat.getColor(this@ControlActivity, R.color.temp_normal) // 그 외 (비슷한 경우)
+                    tempDifference > 2 -> ContextCompat.getColor(this@ControlActivity, R.color.temp_high)
+                    tempDifference < -2 -> ContextCompat.getColor(this@ControlActivity, R.color.temp_low)
+                    else -> ContextCompat.getColor(this@ControlActivity, R.color.temp_normal)
                 }
+
                 val backgroundDrawable = ContextCompat.getDrawable(this@ControlActivity, R.drawable.sensor_temp_background)?.mutate()
                 (backgroundDrawable as? GradientDrawable)?.setColor(backgroundColor)
                 background = backgroundDrawable
-                layoutParams = ConstraintLayout.LayoutParams(sizeInPixels, sizeInPixels)
+
                 gravity = Gravity.CENTER
-                setTextColor(ContextCompat.getColor(this@ControlActivity, R.color.black))
-                elevation = 8f // 그림자 효과
+                setTextColor(ContextCompat.getColor(this@ControlActivity, android.R.color.black))
+                elevation = 8f
             }
 
-            // 3. ConstraintLayout에 TextView 추가
-            binding.sensorDisplayContainer.addView(textView)
-            sensorViews.add(textView) // 관리 목록에 추가
+            textView.setOnClickListener {
+                showSensorControlDialog(sensorData)
+            }
 
-            // 4. ConstraintSet을 사용하여 좌표에 맞게 위치 설정 (핵심 로직)
+            binding.sensorDisplayContainer.addView(textView)
+            sensorViews.add(textView)
+
             val constraintSet = ConstraintSet()
             constraintSet.clone(binding.sensorDisplayContainer)
-
-            // 부모 컨테이너에 연결
             constraintSet.connect(textView.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
             constraintSet.connect(textView.id, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
             constraintSet.connect(textView.id, ConstraintSet.START, ConstraintSet.PARENT_ID, ConstraintSet.START)
             constraintSet.connect(textView.id, ConstraintSet.END, ConstraintSet.PARENT_ID, ConstraintSet.END)
-
-            // posX, posY 값으로 위치(Bias) 설정
             constraintSet.setHorizontalBias(textView.id, sensorData.posX?.toFloat() ?: 0.5f)
             constraintSet.setVerticalBias(textView.id, sensorData.posY?.toFloat() ?: 0.5f)
-
-            // 변경된 제약조건 적용
             constraintSet.applyTo(binding.sensorDisplayContainer)
         }
     }
 
-    // 모드에 따라 UI를 업데이트하는 함수
-    private fun updateModeUI(mode: String) {
-        if (mode == "heating") {
-            // 난방 모드 UI
-            binding.switchMode.text = "난방"
-            if (!binding.switchMode.isChecked) binding.switchMode.isChecked = true // 상태 동기화
+    // 개별 센서를 제어하는 팝업창을 띄우는 함수
+    private fun showSensorControlDialog(sensorData: SensorDisplayData) {
+        val dialog = SensorControlDialog.newInstance(deviceId!!, sensorData)
+        dialog.show(supportFragmentManager, "SensorControlDialog")
+    }
 
-            val redColor = ContextCompat.getColor(this, R.color.heating_red)
-            binding.labelTargetTempDisplay.setTextColor(redColor)
-            binding.textViewTargetTempDisplay.setTextColor(redColor)
-        } else {
-            // 냉방 모드 UI
-            binding.switchMode.text = "냉방"
-            if (binding.switchMode.isChecked) binding.switchMode.isChecked = false // 상태 동기화
+    // '현재 설정을 프리셋으로 저장' 팝업창을 띄우는 함수
+    private fun showSavePresetDialog() {
+        val builder = AlertDialog.Builder(this)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_save_preset, null)
+        val editTextPresetName = dialogView.findViewById<EditText>(R.id.editTextPresetName)
 
-            val blueColor = ContextCompat.getColor(this, R.color.cooling_blue)
-            binding.labelTargetTempDisplay.setTextColor(blueColor)
-            binding.textViewTargetTempDisplay.setTextColor(blueColor)
-        }
+        builder.setView(dialogView)
+            .setTitle("새 프리셋으로 저장")
+            .setPositiveButton("저장") { _, _ ->
+                val presetName = editTextPresetName.text.toString().trim()
+                if (presetName.isNotEmpty()) {
+                    deviceRef.child("control/sensors").get().addOnSuccessListener { dataSnapshot ->
+                        val currentSensorsControl = dataSnapshot.getValue(object : GenericTypeIndicator<Map<String, SensorControlData>>() {})
+                        if (currentSensorsControl != null) {
+                            val newPresetId = "preset_${System.currentTimeMillis()}"
+                            val newPreset = mapOf(
+                                "name" to presetName,
+                                "sensors" to currentSensorsControl
+                            )
+                            deviceRef.child("presets").child(newPresetId).setValue(newPreset)
+                                .addOnSuccessListener { Toast.makeText(this, "'$presetName' 프리셋이 저장되었습니다.", Toast.LENGTH_SHORT).show() }
+                        }
+                    }
+                }
+            }
+            .setNegativeButton("취소") { dialog, _ -> dialog.dismiss() }
+            .show()
     }
 
     override fun onDestroy() {
         super.onDestroy()
-        // Activity가 소멸될 때, 등록했던 리스너들을 모두 제거합니다.
-        statusMessageRunnable?.let { statusMessageHandler.removeCallbacks(it) }
-
-        controlStateListener?.let { deviceRef.child("control").removeEventListener(it) }
-        deviceStatusListener?.let { deviceRef.child("status").removeEventListener(it) }
+        // Activity 소멸 시 모든 리스너를 깨끗하게 해제
+        deviceDataListener?.let { deviceRef.removeEventListener(it) }
         connectionStateListener?.let { deviceRef.child("connection").removeEventListener(it) }
-    }
-
-    private fun updateStatusMessage(message: String, isSuccess: Boolean) {
-        // 이전에 예약된 메시지 삭제 작업이 있다면 취소
-        statusMessageRunnable?.let { statusMessageHandler.removeCallbacks(it) }
-
-        // 새로운 메시지 표시
-        binding.textViewStatusMessage.text = message
-        if (isSuccess) {
-            binding.textViewStatusMessage.setTextColor(ContextCompat.getColor(this, android.R.color.holo_green_dark))
-        } else {
-            binding.textViewStatusMessage.setTextColor(ContextCompat.getColor(this, android.R.color.holo_red_dark))
-        }
-
-        // 3초(3000ms) 뒤에 메시지를 지우는 작업을 예약
-        statusMessageRunnable = Runnable {
-            binding.textViewStatusMessage.text = "" // 텍스트를 비움
-        }
-        statusMessageHandler.postDelayed(statusMessageRunnable!!, 3000)
     }
 }
