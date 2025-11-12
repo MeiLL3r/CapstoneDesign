@@ -52,18 +52,18 @@ def setup_device():
                 }
             }
         })
-        print("✅ Firebase 데이터 셋업 완료.")
+        print("Firebase 데이터 셋업 완료.")
     except Exception as e:
-        print(f"❌ Firebase 셋업 실패: {e}")
+        print(f"Firebase 셋업 실패: {e}")
         exit()
 
     with open(CONFIG_FILE, 'w') as f:
         json.dump({'device_id': device_id}, f)
-    print(f"✅ 설정 파일 '{CONFIG_FILE}'이 생성되었습니다.")
+    print(f"설정 파일 '{CONFIG_FILE}'이 생성되었습니다.")
 
 # --- 2. Firebase 리스너 콜백 함수 ---
 def control_listener(event):
-    print(f"🔥 Firebase 제어 데이터 변경 감지: 경로({event.path}), 데이터({event.data})")
+    print(f"Firebase 제어 데이터 변경 감지: 경로({event.path}), 데이터({event.data})")
     
     if event.path == '/mode':
         mode = event.data
@@ -89,9 +89,9 @@ def set_offline():
                 'status': 'offline',
                 'last_seen': {'.sv': 'timestamp'}
             })
-            print("✅ 연결 상태 업데이트 완료.")
+            print("연결 상태 업데이트 완료.")
         except Exception as e:
-            print(f"❌ 종료 시 연결 상태 업데이트 실패: {e}")
+            print(f"종료 시 연결 상태 업데이트 실패: {e}")
 
 # --- 4. 메인 로직 ---
 def main():
@@ -110,9 +110,9 @@ def main():
             raise ValueError("서비스 계정 키 파일에서 project_id를 찾을 수 없습니다.")
         database_url = f'https://{project_id}-default-rtdb.firebaseio.com/'
         firebase_app = firebase_admin.initialize_app(cred, {'databaseURL': database_url})
-        print("✅ Firebase 초기화 성공.")
+        print("Firebase 초기화 성공.")
     except Exception as e:
-        print(f"❌ Firebase 초기화 실패: {e}")
+        print(f"Firebase 초기화 실패: {e}")
         exit()
 
     # --- 4-2. 설정 파일 확인 및 최초 설정 실행 ---
@@ -134,26 +134,26 @@ def main():
         'status': 'online',
         'last_seen': {'.sv': 'timestamp'}
     })
-    print("✅ Firebase 연결 상태 'online'으로 설정 완료.")
+    print("Firebase 연결 상태 'online'으로 설정 완료.")
 
     # --- 4-4. Firebase 제어 데이터 리스너 시작 ---
     control_ref = db.reference(f'devices/{device_id}/control', app=firebase_app)
     # 리스너를 시작하고 반환된 객체를 listener 변수에 저장
     listener = control_ref.listen(control_listener)
-    print("📡 Firebase 제어 데이터 감시 시작...")
+    print("Firebase 제어 데이터 감시 시작...")
 
     # --- 4-5. 아두이노 시리얼 연결 시도 ---
     try:
         arduino = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=1)
         time.sleep(2)
-        print(f"✅ 아두이노 연결 성공 ({ARDUINO_PORT})")
+        print(f"아두이노 연결 성공 ({ARDUINO_PORT})")
     except serial.SerialException as e:
-        print(f"⚠️ 아두이노 연결 실패: {e}. 데이터 수신만 가능합니다.")
+        print(f"아두이노 연결 실패: {e}. 데이터 수신만 가능합니다.")
         arduino = None
 
     # --- 4-6. 메인 루프를 try...finally로 감싸서 항상 리소스를 해제하도록 변경 ---
     try:
-        print("🔄 아두이노 데이터 수신 대기 시작...")
+        print("아두이노 데이터 수신 대기 시작...")
         status_ref = db.reference(f'devices/{device_id}/status', app=firebase_app)
         connection_ref = db.reference(f'devices/{device_id}/connection', app=firebase_app)
     
@@ -183,7 +183,7 @@ def main():
             # 60초마다 last_seen 업데이트
             current_time = time.time()
             if current_time - last_heartbeat_time > 10:
-                print("❤️ 하트비트 전송: last_seen 업데이트...")
+                print("하트비트 전송: last_seen 업데이트...")
                 connection_ref.child('last_seen').set({'.sv': 'timestamp'})
                 last_heartbeat_time = current_time
 
@@ -191,7 +191,6 @@ def main():
     except KeyboardInterrupt:
         print("\n프로그램을 종료합니다.")
     finally:
-        # --- 여기가 핵심! ---
         # 프로그램 종료 직전, 리스너 스레드를 명시적으로 종료합니다.
         if listener:
             print("Firebase 리스너를 종료합니다...")
