@@ -1,0 +1,50 @@
+{
+    "device_id": "321",
+    "device_name": "dsa",
+    "sensors_config": {
+        "sensor_01": {
+            "name": "\uc67c\ucabd \ud314",
+            "posX": 0.15,
+            "posY": 0.45
+        },
+        "sensor_02": {
+            "name": "\uac00\uc2b4 \uc911\uc559",
+            "posX": 0.5,
+            "posY": 0.3
+        },
+        "sensor_03": {
+            "name": "\ub4f1 \uc911\uc559",
+            "posX": 0.5,
+            "posY": 0.5
+        },
+        "sensor_04": {
+            "name": "\uc624\ub978\ucabd \ud314",
+            "posX": 0.85,
+            "posY": 0.45
+        }
+    },
+    "default_preset": "preset_daily",
+    "presets": {
+        "preset_daily": {
+            "name": "\uc77c\uc0c1 \ubaa8\ub4dc",
+            "sensors": {
+                "sensor_01": {
+                    "mode": "cooling",
+                    "target_temp": 22
+                },
+                "sensor_02": {
+                    "mode": "cooling",
+                    "target_temp": 24
+                },
+                "sensor_03": {
+                    "mode": "off",
+                    "target_temp": 0
+                },
+                "sensor_04": {
+                    "mode": "off",
+                    "target_temp": 0
+                }
+            }
+        }
+    }
+}
