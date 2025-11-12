@@ -120,7 +120,10 @@ class ControlActivity : AppCompatActivity() {
 
                     val averageTemp = statusNode.child("current_temp").getValue(Long::class.java)?.toInt() ?: 0
                     binding.textViewCurrentTemp.text = "$averageTemp °C"
-                    binding.textViewTargetTempDisplay.text = "개별 설정"
+
+                    // 대표 희망 온도를 sensor_01의 값으로 설정합니다.
+                    val representativeTargetTemp = sensorsControlNode.child("sensor_01/target_temp").getValue(Long::class.java)?.toInt() ?: 0
+                    binding.textViewTargetTempDisplay.text = "$representativeTargetTemp °C"
 
                     updateSensorReadings(sensorDisplayList, averageTemp)
 

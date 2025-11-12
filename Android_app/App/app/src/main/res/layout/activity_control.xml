@@ -109,7 +109,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="상태"
+                    android:text="희망 온도 (대표)"
                     android:textSize="18sp" />
 
                 <TextView
@@ -119,7 +119,7 @@
                     android:layout_marginTop="8dp"
                     android:textSize="32sp"
                     android:textStyle="bold"
-                    tools:text="개별 설정" />
+                    tools:text="-- °C" />
             </LinearLayout>
         </LinearLayout>
     </androidx.cardview.widget.CardView>
@@ -167,12 +167,12 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="설정 관리" />
+            android:text="프리셋 관리" />
 
         <!-- 현재 설정 저장 버튼 -->
         <Button
             android:id="@+id/buttonSaveAsPreset"
-            android:layout_width="0dp"
+            android:layout_width="100dp"
             android:layout_height="wrap_content"
             android:layout_marginStart="16dp"
             android:layout_weight="1"

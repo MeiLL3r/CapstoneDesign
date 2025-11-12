@@ -16,7 +16,7 @@ CONFIG_FILE = 'config.json'
 FIREBASE_KEY_FILE = 'firebase-key.json'
 ARDUINO_PORT = '/dev/ttyACM0'  # 환경에 따라 /dev/ttyUSB0 등으로 변경
 BAUD_RATE = 9600
-HEARTBEAT_INTERVAL = 3  # 하트비트 전송 간격 (초)
+HEARTBEAT_INTERVAL = 5  # 하트비트 전송 간격 (초)
 
 # --- 전역 변수 ---
 device_id = None
@@ -151,39 +151,65 @@ def sync_config_with_firebase():
         print("동기화 실패: Firebase에 연결되지 않았습니다.")
         return
 
-    print("🔄 설정 동기화(프리셋 포함)를 시작합니다...")
+    print("🔄 설정 동기화(프리셋 및 센서 정보)를 시작합니다...")
     try:
         device_ref = db.reference(f"devices/{device_id}", app=firebase_app)
         firebase_data = device_ref.get()
 
         if firebase_data is None:
-            print("Firebase에 기기 데이터가 없습니다. 로컬 설정을 업로드합니다.")
+            print("Firebase에 기기 데이터가 없습니다. 로컬 설정을 전체 업로드합니다.")
             upload_initial_config_to_firebase()
             return
             
+        # --- 센서 물리적 정보(status/sensors) 동기화 ---
+        firebase_status_sensors = firebase_data.get('status', {}).get('sensors', {})
+        local_sensors_config = config_data.get('sensors_config', {})
+        
+        # 로컬 config.json 기준으로 Firebase의 센서 정보 확인 및 복구
+        for sensor_id, local_info in local_sensors_config.items():
+            firebase_sensor = firebase_status_sensors.get(sensor_id)
+            
+            # Firebase에 센서 자체가 없거나, 필수 정보(name, posX, posY)가 누락된 경우
+            if (firebase_sensor is None or 
+                    'name' not in firebase_sensor or 
+                    'posX' not in firebase_sensor or 
+                    'posY' not in firebase_sensor):
+                
+                print(f"Firebase에서 '{sensor_id}'의 정보가 누락/손상되어 복구합니다.")
+                # 'temp' 값을 포함하여 완전한 노드를 다시 생성 (기존 temp 값은 덮어쓰지 않음)
+                update_path = f"status/sensors/{sensor_id}"
+                # temp 값은 유지하기 위해 기존 값을 읽어오거나 0으로 설정
+                existing_temp = firebase_sensor.get('temp', 0) if firebase_sensor else 0
+                device_ref.child(update_path).set({
+                    'name': local_info['name'],
+                    'posX': local_info['posX'],
+                    'posY': local_info['posY'],
+                    'temp': existing_temp
+                })
+
+        # --- 프리셋 및 default_preset 동기화 (기존 로직 유지) ---
         firebase_presets = firebase_data.get('presets', {})
         local_presets = config_data.get('presets', {})
-        updated = False
+        config_updated = False
 
         # Firebase -> 로컬 동기화
         for preset_id, info in firebase_presets.items():
             if preset_id not in local_presets or local_presets[preset_id] != info:
                 local_presets[preset_id] = info
-                updated = True
+                config_updated = True
         
         # 로컬 -> Firebase 동기화
         for preset_id, info in local_presets.items():
             if preset_id not in firebase_presets:
                 device_ref.child('presets').child(preset_id).set(info)
-                # 'updated'는 로컬 파일 변경 여부이므로 여기서는 false
 
         # default_preset 동기화 (Firebase 우선)
         firebase_default = firebase_data.get('default_preset')
         if firebase_default and config_data.get('default_preset') != firebase_default:
             config_data['default_preset'] = firebase_default
-            updated = True
+            config_updated = True
 
-        if updated:
+        if config_updated:
             print("프리셋 정보가 동기화되어 config.json을 업데이트합니다.")
             script_dir = os.path.dirname(os.path.abspath(__file__))
             config_path = os.path.join(script_dir, CONFIG_FILE)

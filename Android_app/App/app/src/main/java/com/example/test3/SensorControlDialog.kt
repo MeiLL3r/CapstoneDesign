@@ -22,8 +22,8 @@ class SensorControlDialog : DialogFragment() {
     private var initialTemp: Int = 22
 
     // SeekBar 범위를 위한 상수
-    private val MIN_TEMP = 10
-    private val MAX_TEMP = 40
+    private val MIN_TEMP = 16
+    private val MAX_TEMP = 30
 
     // DialogFragment를 생성하고 데이터를 전달하는 표준 방식
     companion object {
