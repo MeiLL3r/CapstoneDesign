@@ -7,6 +7,8 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
+import android.os.Handler
+import android.os.Looper
 import android.view.View
 import androidx.core.content.ContextCompat
 import androidx.appcompat.app.AlertDialog
@@ -24,14 +26,29 @@ import com.google.firebase.ktx.Firebase
 
 class MainActivity : AppCompatActivity() {
 
+    // ===================================================================================
+    // ※ 로직 전환 스위치 ※
+    // true : 시스템 시간 사용 불가 모드 (Handler 타임아웃 방식)
+    // false: 시스템 시간 사용 가능 모드 (시간 직접 비교 방식)
+    // ===================================================================================
+    companion object {
+        private const val CANNOT_SYSTEM_TIME = false
+    }
+    // ===================================================================================
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var database: DatabaseReference
 
     // RecyclerView를 위한 어댑터와 데이터 리스트 선언
     private lateinit var deviceAdapter: DeviceAdapter
     private val deviceList = mutableListOf<Device>()
-    
+
+    // --- 모드 1: 시간 직접 비교 방식에 사용 ---
     private val OFFLINE_THRESHOLD_MS = 2 * 60 * 1000L // 2분 (밀리초 단위)
+
+    // --- 모드 2: Handler 타임아웃 방식에 사용 ---
+    private val offlineCheckHandler = Handler(Looper.getMainLooper())
+    private val offlineCheckRunnableMap = mutableMapOf<String, Runnable>()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -73,15 +90,22 @@ class MainActivity : AppCompatActivity() {
             }
 
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {
-                val position = viewHolder.adapterPosition
-                val device = deviceList[position]
-
-                if (direction == ItemTouchHelper.LEFT) {
-                    // 오른쪽 -> 왼쪽 스와이프 (삭제 기능)
-                    showDeleteDialog(device, position)
-                } else if (direction == ItemTouchHelper.RIGHT) {
-                    // 왼쪽 -> 오른쪽 스와이프 (수정 기능)
-                    showEditDialog(device, position)
+                val position = viewHolder.bindingAdapterPosition
+                // 스와이프된 아이템의 위치가 유효한지 확인
+                if (position != RecyclerView.NO_POSITION && position < deviceList.size) {
+                    val device = deviceList[position]
+                    if (direction == ItemTouchHelper.LEFT) {
+                        // 오른쪽 -> 왼쪽 스와이프 (삭제 기능)
+                        showDeleteDialog(device, position)
+                    } else if (direction == ItemTouchHelper.RIGHT) {
+                        // 왼쪽 -> 오른쪽 스와이프 (수정 기능)
+                        showEditDialog(device, position)
+                    }
+                }
+                else {
+                    viewHolder.itemView.post { // UI 스레드에서 안전하게 실행되도록 post 사용
+                        deviceAdapter.notifyItemChanged(viewHolder.bindingAdapterPosition)
+                    }
                 }
             }
 
@@ -161,20 +185,54 @@ class MainActivity : AppCompatActivity() {
                     val deviceName = deviceSnapshot.child("name").getValue(String::class.java) ?: "Unknown"
                     val statusFromDB = deviceSnapshot.child("connection/status").getValue(String::class.java) ?: "offline"
                     val lastSeen = deviceSnapshot.child("connection/last_seen").getValue(Long::class.java) ?: 0L
-                    val deviceMode = deviceSnapshot.child("control/mode").getValue(String::class.java) ?: "cooling"
-                    val deviceTargetTemp = deviceSnapshot.child("control/target_temp").getValue(Int::class.java) ?: 0
+                    val deviceMode = deviceSnapshot.child("control/sensors/sensor_01/mode").getValue(String::class.java) ?: "cooling"
+                    val deviceTargetTemp = deviceSnapshot.child("control/sensors/sensor_01/target_temp").getValue(Int::class.java) ?: 0
 
                     // 2. '감시자' 로직: lastSeen을 기반으로 실제 상태(effectiveStatus)를 결정합니다.
-                    val currentTime = System.currentTimeMillis()
-                    val timeDifference = currentTime - lastSeen
+                    val effectiveStatus: String // 최종 상태를 담을 변수
 
-                    val effectiveStatus = if (statusFromDB == "online" && timeDifference > OFFLINE_THRESHOLD_MS) {
-                        // DB 상태는 '온라인'이지만, 마지막 접속 시간이 일정 시간을 넘었으면 '오프라인'으로 강제 판단
-                        "offline"
+                    // =========================================================================
+                    // CANNOT_SYSTEM_TIME 플래그 값에 따라 다른 코드가 실행됩니다.
+                    // True일 시 모드 1, False일 시 모드 2
+                    // =========================================================================
+                    if (CANNOT_SYSTEM_TIME) {
+                        // --- 모드 1: Handler 타임아웃 방식 (시스템 시간 동기화 불필요) ---
+
+                        // 이전에 설정된 '오프라인 판정 타이머'가 있다면 취소 (생존 신호)
+                        offlineCheckRunnableMap[deviceId]?.let { existingRunnable ->
+                            offlineCheckHandler.removeCallbacks(existingRunnable)
+                        }
+
+                        // "미래에 실행될 일"을 정의: 타임아웃 시 기기를 오프라인 처리
+                        val offlineRunnable = Runnable {
+                            // 현재 UI 리스트에서 이 기기를 찾아 상태를 'offline'으로 수정
+                            val targetDevice = deviceList.find { it.id == deviceId }
+                            if (targetDevice != null && targetDevice.status != "offline") {
+                                targetDevice.status = "offline"
+                                // 상태가 변경되었으니 어댑터에 알려 UI를 갱신
+                                deviceAdapter.notifyDataSetChanged()
+                            }
+                        }
+
+                        // '미래의 일'을 예약하고, 나중에 취소할 수 있도록 Map에 저장
+                        offlineCheckHandler.postDelayed(offlineRunnable, OFFLINE_THRESHOLD_MS)
+                        offlineCheckRunnableMap[deviceId] = offlineRunnable
+
+                        // 지금 당장은 DB의 상태를 그대로 신뢰
+                        effectiveStatus = statusFromDB
+
                     } else {
-                        // 그 외의 경우는 DB에 기록된 상태를 그대로 사용
-                        statusFromDB
+                        // --- 모드 2: 시간 직접 비교 방식 (시스템 시간 동기화 신뢰) ---
+                        val currentTime = System.currentTimeMillis()
+                        val timeDifference = currentTime - lastSeen
+
+                        effectiveStatus = if (statusFromDB == "online" && timeDifference > OFFLINE_THRESHOLD_MS) {
+                            "offline" // 온라인이지만 마지막 접속 시간이 오래됐으면 오프라인으로 강제 판단
+                        } else {
+                            statusFromDB // 그 외에는 DB 상태를 그대로 사용
+                        }
                     }
+                    // =========================================================================
 
                     // 3. 최종적으로 판단된 상태(effectiveStatus)를 사용하여 Device 객체를 생성합니다.
                     val device = Device(
