@@ -36,7 +36,7 @@ def validate_and_load_config(config_path):
             config_data = json.load(f)
         
         # 필수 키 검증
-        required_keys = ['device_id', 'device_name', 'sensors_config', 'default_preset', 'presets']
+        required_keys = ['device_id', 'device_password', 'sensors_config', 'default_preset', 'presets']
         if not all(key in config_data for key in required_keys):
             raise ValueError("필수 키가 누락되었습니다.")
             
@@ -63,10 +63,10 @@ def setup_device_and_config():
     global device_id, config_data
     print("--- 최초 설정 모드 ---")
     device_id = input("기기 고유번호를 입력하세요 (예: 123): ").strip()
-    device_name = input(f"'{device_id}' 기기의 별명을 입력하세요 (예: 내 작업복): ").strip()
+    device_password = input("'{device_id}' 기기의 비밀번호를 입력하세요 (예: 0000): ").strip()
 
-    if not device_id or not device_name:
-        print("오류: 기기 고유번호와 별명은 반드시 입력해야 합니다.")
+    if not device_id or not device_password:
+        print("오류: 기기 고유번호와 비밀번호는 반드시 입력해야 합니다.")
         exit()
 
     # 기본 센서 설정 데이터 (물리적 정보)
@@ -87,7 +87,7 @@ def setup_device_and_config():
     # config.json에 저장할 데이터 구성
     config_data = {
         'device_id': device_id,
-        'device_name': device_name,
+        'device_password': device_password,
         'sensors_config': default_sensors_config,
         'default_preset': 'preset_daily',
         'presets': {
@@ -124,7 +124,7 @@ def upload_initial_config_to_firebase():
         
         # config_data를 기반으로 Firebase 데이터 구조 생성
         ref.set({
-            'name': config_data['device_name'], # <-- name 필드 추가
+            'password': config_data['device_password'],
             'default_preset': config_data['default_preset'],
             'connection': {
                 'status': 'offline',
@@ -466,8 +466,6 @@ def main():
 
         # 4. 마지막으로 Firebase 상태를 업데이트합니다.
         if firebase_is_connected:
-            # 이 함수는 내부적으로 time.time()을 사용하므로,
-            # 종료 시점의 정확한 타임스탬프가 기록됩니다.
             set_connection_status("offline")
             # Firebase와 통신할 시간을 약간 줍니다.
             time.sleep(2)

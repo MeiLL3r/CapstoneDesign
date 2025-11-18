@@ -1,6 +1,6 @@
 {
     "device_id": "321",
-    "device_name": "dsa",
+    "device_password": "0000",
     "sensors_config": {
         "sensor_01": {
             "name": "\uc67c\ucabd \ud314",
