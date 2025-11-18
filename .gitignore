@@ -76,6 +76,7 @@ secrets.*
 config.yml
 token.json
 Raspberry_Pi/firebase-key.json
+Raspberry_Pi/config.json
 
 # ======================================
 # 📷 이미지/결과물 무시 (시각화 등)
