@@ -59,7 +59,7 @@ void loop() {
     }
 
     // 하드웨어에 변경된 값 적용
-    applyToL298N();
+    applyToDriver();
     
     // 화면에 현재 상태 출력
     printStatus();
@@ -67,7 +67,7 @@ void loop() {
 }
 
 // 변경된 변수 값들을 드라이버에 보내는 함수
-void applyToL298N() {
+void applyToDriver() {
   // 방향 제어
   if (isNormalMode) {
     // 정방향
