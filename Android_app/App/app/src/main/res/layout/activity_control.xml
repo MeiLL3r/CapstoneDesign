@@ -78,7 +78,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="현재 평균"
+                    android:text="현재 온도 (대표)"
                     android:textSize="18sp" />
 
                 <TextView
@@ -179,5 +179,56 @@
             android:text="현재 설정을 프리셋으로 저장" />
 
     </LinearLayout>
+
+    <!-- 그래프 카드 -->
+    <androidx.cardview.widget.CardView
+        android:id="@+id/cardViewGraph"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_margin="16dp"
+        app:cardCornerRadius="12dp"
+        app:cardElevation="4dp"
+        app:layout_constraintTop_toBottomOf="@+id/labelCurrentPreset"
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintBottom_toBottomOf="parent"
+        app:layout_constraintVertical_bias="0.0">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="16dp">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="실시간 온도 추이 (최근 1시간)"
+                android:textColor="#333333"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <!-- 미니 차트 -->
+            <com.github.mikephil.charting.charts.LineChart
+                android:id="@+id/miniLineChart"
+                android:layout_width="match_parent"
+                android:layout_height="110dp"
+                android:layout_marginTop="12dp"
+                android:layout_marginBottom="12dp" />
+
+            <!-- 자세히 보기 버튼 -->
+            <Button
+                android:id="@+id/buttonDetailLog"
+                android:layout_width="match_parent"
+                android:layout_height="40dp"
+                android:backgroundTint="#EDE7F6"
+                android:text="자세히 보기"
+                android:textColor="#673AB7"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                app:cornerRadius="8dp"
+                android:stateListAnimator="@null"/>
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
 
 </androidx.constraintlayout.widget.ConstraintLayout>

@@ -20,7 +20,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:hint="기기의 고유번호를 입력하세요"
+        android:hint="기기의 고유번호를 입력하세요."
         android:inputType="text"
         android:autofillHints="name" />
 
@@ -37,8 +37,23 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="8dp"
-        android:hint="식별하기 쉬운 별명을 지어주세요"
+        android:hint="식별하기 쉬운 별명을 지어주세요."
         android:inputType="text"
         android:autofillHints="name" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="기기 비밀번호"
+        android:labelFor="@id/editTextDeviceName"/>
+
+    <EditText
+        android:id="@+id/editTextDevicePassword"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:hint="기기의 비밀번호를 입력하세요. (초기: 0000)"
+        android:inputType="textPassword" />
 
 </LinearLayout>

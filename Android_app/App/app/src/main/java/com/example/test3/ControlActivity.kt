@@ -1,11 +1,13 @@
 package com.example.test3
 
 import android.content.Intent
+import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.util.Log
 import android.view.Gravity
 import android.view.View
+import android.widget.Button
 import android.widget.EditText
 import android.widget.TextView
 import android.widget.Toast
@@ -67,7 +69,7 @@ class ControlActivity : AppCompatActivity() {
         listenToDeviceChanges()
         listenToConnectionState()
 
-        // --- 프리셋 기능 버튼 리스너 ---
+        // 프리셋 기능 버튼 리스너
         binding.buttonManagePresets.setOnClickListener {
             val intent = Intent(this, PresetsActivity::class.java).apply {
                 putExtra("DEVICE_ID", deviceId)
@@ -78,6 +80,19 @@ class ControlActivity : AppCompatActivity() {
         binding.buttonSaveAsPreset.setOnClickListener {
             showSavePresetDialog()
         }
+
+        // 자세히 보기 버튼 리스너
+        val buttonDetailLog = findViewById<Button>(R.id.buttonDetailLog) // 뷰 바인딩 안쓰는 경우 find 필요
+        buttonDetailLog.setOnClickListener {
+            val intent = Intent(this, LogActivity::class.java).apply {
+                putExtra("DEVICE_ID", deviceId)
+            }
+            startActivity(intent)
+        }
+
+        // 미니 차트 설정 및 데이터 로딩 시작
+        setupMiniChart()
+        loadRecentLogs()
     }
 
     // status와 control 데이터를 모두 읽어와 UI를 업데이트하는 통합 리스너
@@ -256,5 +271,72 @@ class ControlActivity : AppCompatActivity() {
         // Activity 소멸 시 모든 리스너를 깨끗하게 해제
         deviceDataListener?.let { deviceRef.removeEventListener(it) }
         connectionStateListener?.let { deviceRef.child("connection").removeEventListener(it) }
+    }
+
+    private fun setupMiniChart() {
+        val chart = findViewById<com.github.mikephil.charting.charts.LineChart>(R.id.miniLineChart)
+
+        // 미니 차트 스타일링 (최대한 심플하게)
+        chart.description.isEnabled = false
+        chart.legend.isEnabled = false // 범례 숨김
+        chart.xAxis.isEnabled = false  // X축 숨김 (깔끔하게)
+        chart.axisLeft.isEnabled = true // 왼쪽 Y축만 표시
+        chart.axisRight.isEnabled = false
+        chart.axisLeft.setDrawGridLines(false) // 격자 숨김
+        chart.xAxis.setDrawGridLines(false)
+        chart.setTouchEnabled(false) // 터치 불가능 (단순 뷰어용)
+        chart.axisLeft.textColor = Color.GRAY
+        chart.setNoDataText("데이터를 불러오는 중...")
+    }
+
+    private fun loadRecentLogs() {
+        if (deviceId == null) return
+
+        // 오늘 날짜 구하기
+        val sdf = java.text.SimpleDateFormat("yyyyMMdd", java.util.Locale.getDefault())
+        sdf.timeZone = java.util.TimeZone.getTimeZone("Asia/Seoul")
+        val todayStr = sdf.format(java.util.Date())
+
+        // logs/YYYYMMDD 경로에서 최근 60개(약 1시간) 데이터만 가져오기
+        val logsRef = Firebase.database.reference
+            .child("devices").child(deviceId!!).child("logs").child(todayStr)
+            .limitToLast(60) // 핵심: 너무 많이 가져오지 않음
+
+        logsRef.get().addOnSuccessListener { snapshot ->
+            if (!snapshot.exists()) {
+                findViewById<com.github.mikephil.charting.charts.LineChart>(R.id.miniLineChart).setNoDataText("오늘의 데이터가 없습니다.")
+                return@addOnSuccessListener
+            }
+
+            val entries = ArrayList<com.github.mikephil.charting.data.Entry>()
+            var index = 0f
+
+            // 데이터 파싱 (대표 센서 하나만)
+            for (timeSnapshot in snapshot.children) {
+                // 여기서는 sensor_01
+                val temp = timeSnapshot.child("sensor_01").getValue(Int::class.java)?.toFloat() ?: 0f
+                entries.add(com.github.mikephil.charting.data.Entry(index, temp))
+                index += 1f
+            }
+
+            if (entries.isNotEmpty()) {
+                val dataSet = com.github.mikephil.charting.data.LineDataSet(entries, "Temperature")
+                dataSet.color = ContextCompat.getColor(this, R.color.purple_500) // 앱 테마 색상 (보라색)
+                dataSet.setDrawCircles(false) // 점 없애고 선만 표시
+                dataSet.setDrawValues(false)  // 값 숫자 숨김
+                dataSet.lineWidth = 2f
+                dataSet.mode = com.github.mikephil.charting.data.LineDataSet.Mode.CUBIC_BEZIER // 부드러운 곡선
+                dataSet.setDrawFilled(true) // 아래쪽 채우기
+                dataSet.fillColor = ContextCompat.getColor(this, R.color.purple_200) // 채우기 색상
+                dataSet.fillAlpha = 50
+
+                val lineData = com.github.mikephil.charting.data.LineData(dataSet)
+                val chart = findViewById<com.github.mikephil.charting.charts.LineChart>(R.id.miniLineChart)
+                chart.data = lineData
+                chart.invalidate() // 새로고침
+            }
+        }.addOnFailureListener {
+            // 로딩 실패 시 조용히 넘어감
+        }
     }
 }

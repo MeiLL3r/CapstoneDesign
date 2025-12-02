@@ -7,4 +7,6 @@
     <color name="temp_high">#FF5722</color>  <!-- 주황색 계열 (평균보다 높을 때) -->
     <color name="temp_normal">#80FFFFFF</color> <!-- 기존 반투명 흰색 (평균과 비슷할 때) -->
     <color name="temp_low">#03A9F4</color>   <!-- 하늘색 계열 (평균보다 낮을 때) -->
+    <color name="purple_500">#673AB7</color>    <!-- 진한 보라색 -->
+    <color name="purple_200">#D1C4E9</color>    <!-- 연한 보라색 -->
 </resources>

@@ -271,18 +271,40 @@ class MainActivity : AppCompatActivity() {
         val dialogView = layoutInflater.inflate(R.layout.dialog_add_device, null)
         val editTextDeviceId = dialogView.findViewById<EditText>(R.id.editTextDeviceId)
         val editTextDeviceName = dialogView.findViewById<EditText>(R.id.editTextDeviceName)
+        val editTextDevicePassword = dialogView.findViewById<EditText>(R.id.editTextDevicePassword)
 
         builder.setView(dialogView)
             .setTitle("새 기기 등록")
             .setPositiveButton("등록") { dialog, _ ->
                 val deviceId = editTextDeviceId.text.toString().trim()
                 val deviceName = editTextDeviceName.text.toString().trim()
-                if (deviceId.isNotEmpty() && deviceName.isNotEmpty()) {
-                    // Firebase에 새 기기 데이터 생성
-                    val newDevice = mapOf("name" to deviceName, "control" to mapOf("target_temp" to 0, "power_on" to false))
-                    database.child(deviceId).setValue(newDevice)
+                val password = editTextDevicePassword.text.toString().trim()
+
+                if (deviceId.isNotEmpty() && deviceName.isNotEmpty() && password.isNotEmpty()) {
+                    // 비밀번호 검증
+                    val deviceRef = database.child(deviceId)
+                    deviceRef.child("password").get().addOnSuccessListener { dataSnapshot ->
+                        val passwordFromDb = dataSnapshot.getValue(String::class.java)
+
+                        // Firebase에 비밀번호가 존재하고, 입력한 비밀번호와 일치하는지 확인
+                        if (passwordFromDb != null && passwordFromDb == password) {
+                            // 비밀번호 일치: 기기 이름(별칭)을 업데이트
+                            deviceRef.child("name").setValue(deviceName)
+                                .addOnSuccessListener {
+                                    Toast.makeText(this, "'$deviceName' 기기가 연결되었습니다.", Toast.LENGTH_SHORT).show()
+                                }
+                            dialog.dismiss()
+                        } else {
+                            // 비밀번호가 틀리거나, 해당 기기에 비밀번호가 없는 경우
+                            Toast.makeText(this, "기기 번호 또는 비밀번호가 일치하지 않습니다.", Toast.LENGTH_SHORT).show()
+                        }
+                    }.addOnFailureListener {
+                        // 해당 deviceId가 존재하지 않거나 네트워크 오류 발생
+                        Toast.makeText(this, "기기를 찾을 수 없거나 네트워크에 오류가 발생했습니다.", Toast.LENGTH_SHORT).show()
+                    }
+                } else {
+                    Toast.makeText(this, "모든 필드를 입력해주세요.", Toast.LENGTH_SHORT).show()
                 }
-                dialog.dismiss()
             }
             .setNegativeButton("취소") { dialog, _ ->
                 dialog.dismiss()
@@ -322,33 +344,85 @@ class MainActivity : AppCompatActivity() {
     // 수정 팝업창 함수
     private fun showEditDialog(device: Device, position: Int) {
         val builder = AlertDialog.Builder(this)
-        val dialogView = layoutInflater.inflate(R.layout.dialog_add_device, null) // 기존 등록 팝업창 재활용
-        val editTextDeviceId = dialogView.findViewById<EditText>(R.id.editTextDeviceId)
-        val editTextDeviceName = dialogView.findViewById<EditText>(R.id.editTextDeviceName)
+        val dialogView = layoutInflater.inflate(R.layout.dialog_edit_device, null)
 
-        // 기존 기기 정보를 팝업창에 미리 채워넣음
-        editTextDeviceId.setText(device.id)
-        editTextDeviceId.isEnabled = false // 기기 ID는 수정할 수 없도록 비활성화
+        val editTextDeviceName = dialogView.findViewById<EditText>(R.id.editTextDeviceName)
+        val editTextCurrentPassword = dialogView.findViewById<EditText>(R.id.editTextCurrentPassword)
+        val editTextNewPassword = dialogView.findViewById<EditText>(R.id.editTextNewPassword)
+        val editTextConfirmPassword = dialogView.findViewById<EditText>(R.id.editTextConfirmPassword)
+
+        // 기존 이름 채워넣기
         editTextDeviceName.setText(device.name)
 
         builder.setView(dialogView)
             .setTitle("기기 정보 수정")
             .setPositiveButton("저장") { dialog, _ ->
-                val newDeviceName = editTextDeviceName.text.toString().trim()
-                if (newDeviceName.isNotEmpty()) {
-                    // Firebase의 해당 기기 경로에서 'name' 필드만 업데이트
-                    device.id?.let { deviceId ->
-                        database.child(deviceId).child("name").setValue(newDeviceName)
+                val newName = editTextDeviceName.text.toString().trim()
+                val currentPassword = editTextCurrentPassword.text.toString().trim()
+                val newPassword = editTextNewPassword.text.toString().trim()
+                val confirmPassword = editTextConfirmPassword.text.toString().trim()
+
+                // 기본 유효성 검사
+                if (newName.isEmpty()) {
+                    Toast.makeText(this, "기기 이름은 비워둘 수 없습니다.", Toast.LENGTH_SHORT).show()
+//                    deviceAdapter.notifyItemChanged(position) // 스와이프 복구
+                    return@setPositiveButton
+                }
+                if (currentPassword.isEmpty()) {
+                    Toast.makeText(this, "수정하려면 현재 비밀번호를 입력해야 합니다.", Toast.LENGTH_SHORT).show()
+//                    deviceAdapter.notifyItemChanged(position) // 스와이프 복구
+                    return@setPositiveButton
+                }
+
+                // Firebase에서 실제 비밀번호 확인
+                device.id?.let { deviceId ->
+                    database.child(deviceId).child("password").get().addOnSuccessListener { dataSnapshot ->
+                        val realPassword = dataSnapshot.getValue(String::class.java)
+
+                        if (realPassword != null && realPassword == currentPassword) {
+                            // 인증 성공: 정보 업데이트 진행
+                            val updates = mutableMapOf<String, Any>()
+                            updates["name"] = newName
+
+                            // 새 비밀번호가 입력되었는지 확인
+                            if (newPassword.isNotEmpty()) {
+                                if (newPassword == confirmPassword) {
+                                    updates["password"] = newPassword
+                                } else {
+                                    Toast.makeText(this, "새 비밀번호가 서로 일치하지 않아 변경되지 않았습니다.", Toast.LENGTH_LONG).show()
+//                                    deviceAdapter.notifyItemChanged(position)
+                                    return@addOnSuccessListener
+                                }
+                            }
+
+                            // Firebase 업데이트
+                            database.child(deviceId).updateChildren(updates)
+                                .addOnSuccessListener {
+                                    Toast.makeText(this, "정보가 수정되었습니다.", Toast.LENGTH_SHORT).show()
+                                }
+                                .addOnFailureListener {
+                                    Toast.makeText(this, "수정 실패: ${it.message}", Toast.LENGTH_SHORT).show()
+                                }
+
+                        } else {
+                            // 비밀번호 불일치
+                            Toast.makeText(this, "현재 비밀번호가 틀렸습니다.", Toast.LENGTH_SHORT).show()
+                        }
+                        dialog.dismiss()
+                    }.addOnFailureListener {
+                        Toast.makeText(this, "네트워크 오류가 발생했습니다.", Toast.LENGTH_SHORT).show()
+                        dialog.dismiss()
                     }
                 }
-                dialog.dismiss()
             }
             .setNegativeButton("취소") { dialog, _ ->
                 dialog.dismiss()
             }
             .setOnDismissListener {
-                // 다이얼로그가 닫힐 때 아이템 뷰를 원래대로 되돌림
+                // 다이얼로그가 닫히면(취소 등) 스와이프된 아이템을 원상복구
+                binding.recyclerViewDevices.post {
                 deviceAdapter.notifyItemChanged(position)
+                    }
             }
             .show()
     }

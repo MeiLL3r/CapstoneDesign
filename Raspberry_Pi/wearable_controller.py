@@ -10,6 +10,7 @@ import os
 import atexit
 import threading
 import socket
+import datetime
 
 # --- 설정 (Constants) ---
 CONFIG_FILE = 'config.json'
@@ -17,6 +18,7 @@ FIREBASE_KEY_FILE = 'firebase-key.json'
 ARDUINO_PORT = '/dev/ttyACM0'  # 환경에 따라 /dev/ttyUSB0 등으로 변경
 BAUD_RATE = 9600
 HEARTBEAT_INTERVAL = 5  # 하트비트 전송 간격 (초)
+LOG_INTERVAL = 60 # 로그 저장 간격 (초)
 
 # --- 전역 변수 ---
 device_id = None
@@ -72,16 +74,16 @@ def setup_device_and_config():
     # 기본 센서 설정 데이터 (물리적 정보)
     default_sensors_config = {
         'sensor_01': {'name': '왼쪽 팔', 'posX': 0.15, 'posY': 0.45},
-        'sensor_02': {'name': '가슴 중앙', 'posX': 0.5, 'posY': 0.3},
-        'sensor_03': {'name': '등 중앙', 'posX': 0.5, 'posY': 0.5},
-        'sensor_04': {'name': '오른쪽 팔', 'posX': 0.85, 'posY': 0.45}
+        'sensor_02': {'name': '가슴 중앙', 'posX': 0.29, 'posY': 0.4},
+        'sensor_03': {'name': '등 중앙', 'posX': 0.71, 'posY': 0.5},
+        'sensor_04': {'name': '오른쪽 팔', 'posX': 0.43, 'posY': 0.45}
     }
     
     default_preset_sensors = {
-        'sensor_01': {'mode': 'cooling', 'target_temp': 22},
-        'sensor_02': {'mode': 'cooling', 'target_temp': 24},
-        'sensor_03': {'mode': 'off', 'target_temp': 0},
-        'sensor_04': {'mode': 'off', 'target_temp': 0}
+        'sensor_01': {'mode': 'heating', 'target_temp': 22},
+        'sensor_02': {'mode': 'heating', 'target_temp': 24},
+        'sensor_03': {'mode': 'heating', 'target_temp': 25},
+        'sensor_04': {'mode': 'heating', 'target_temp': 25}
     }
 
     # config.json에 저장할 데이터 구성
@@ -135,7 +137,7 @@ def upload_initial_config_to_firebase():
                 'sensors': config_data['presets'][config_data['default_preset']]['sensors'] # <-- control/sensors 구조 추가
             },
             'status': {
-                'current_temp': 0,
+                'current_temp': 25,
                 'sensors': status_sensors
             },
             'presets': config_data['presets']
@@ -225,6 +227,8 @@ def firebase_thread_worker():
     global firebase_app, firebase_is_connected, listener
     
     last_heartbeat_time = 0
+    last_log_time = 0 
+
     while main_loop_running:
         if not firebase_is_connected:
             try:
@@ -252,6 +256,8 @@ def firebase_thread_worker():
                 time.sleep(10)
         else:
             current_time = time.time()
+
+            # 하트비트 전송
             if current_time - last_heartbeat_time > HEARTBEAT_INTERVAL:
                 try:
                     connection_ref = db.reference(f'devices/{device_id}/connection', app=firebase_app)
@@ -262,6 +268,36 @@ def firebase_thread_worker():
                 except Exception as e:
                     print(f"하트비트 전송 실패, 연결을 재설정합니다: {e}")
                     firebase_is_connected = False
+            
+            # 데이터 로깅
+            if current_time - last_log_time > LOG_INTERVAL:
+                try:
+                    # 현재 시간 포맷팅
+                    now = datetime.datetime.now()
+                    date_str = now.strftime("%Y%m%d")   # 예: 20251203
+                    time_str = now.strftime("%H%M%S")   # 예: 153000
+                    
+                    # 현재 센서 데이터 가져오기 (status 경로의 값 참조)
+                    status_ref = db.reference(f'devices/{device_id}/status/sensors', app=firebase_app)
+                    current_sensors_data = status_ref.get()
+
+                    if current_sensors_data:
+                        # 저장할 데이터 간소화 (temp 값만 추출)
+                        log_data = {}
+                        for s_id, s_data in current_sensors_data.items():
+                            if 'temp' in s_data:
+                                log_data[s_id] = s_data['temp']
+                        
+                        # /devices/{id}/logs/{date}/{time} 경로에 저장
+                        log_ref = db.reference(f'devices/{device_id}/logs/{date_str}/{time_str}', app=firebase_app)
+                        log_ref.set(log_data)
+                        
+                        print(f"📝 데이터 로그 저장 완료: {time_str}")
+                        last_log_time = current_time
+
+                except Exception as e:
+                    print(f"로그 저장 실패: {e}")
+
             time.sleep(1)
 
 def set_connection_status(status):
