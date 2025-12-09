@@ -147,6 +147,20 @@
         app:layout_constraintStart_toEndOf="@id/labelCurrentPreset"
         tools:text="일상 모드" />
 
+    <!-- 전역 냉난방 모드 스위치 -->
+    <Switch
+        android:id="@+id/switchGlobalMode"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="현재 모드: 냉방"
+        android:textSize="16sp"
+        android:layout_marginEnd="24dp"
+        android:thumbTint="@color/white"
+        android:trackTint="@color/purple_500"
+        app:layout_constraintEnd_toEndOf="parent"
+        app:layout_constraintTop_toTopOf="@+id/labelCurrentPreset"
+        app:layout_constraintBottom_toBottomOf="@+id/textViewCurrentPresetName" />
+
     <!-- 하단 버튼 영역 -->
     <LinearLayout
         android:id="@+id/buttonContainer"

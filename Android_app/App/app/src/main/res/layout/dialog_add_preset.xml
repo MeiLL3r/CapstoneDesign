@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="24dp">
+
+    <!-- 프리셋 이름 입력 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="프리셋 이름"
+        android:textStyle="bold" />
+
+    <EditText
+        android:id="@+id/etPresetName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:hint="예: 겨울 야외 활동"
+        android:inputType="text" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginVertical="16dp"
+        android:background="#EEEEEE" />
+
+    <!-- 전역 모드 스위치 -->
+    <Switch
+        android:id="@+id/swMode"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="모드: 냉방"
+        android:checked="true"
+        android:textSize="16sp" />
+
+    <!-- 그룹 1 온도 설정 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="전면부 그룹 (복부) 목표 온도"
+        android:layout_marginTop="16dp"
+        android:textColor="#666666"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <SeekBar
+            android:id="@+id/sbGroup1"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="14" />
+        <!-- max 14는 (30도 - 16도) 범위를 의미 -->
+
+        <TextView
+            android:id="@+id/tvG1Temp"
+            android:layout_width="40dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="24°C"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- 그룹 2 온도 설정 -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="후면부 그룹 (등 상하부) 목표 온도"
+        android:layout_marginTop="16dp"
+        android:textColor="#666666"
+        android:textSize="12sp" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <SeekBar
+            android:id="@+id/sbGroup2"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:max="14" />
+
+        <TextView
+            android:id="@+id/tvG2Temp"
+            android:layout_width="40dp"
+            android:layout_height="wrap_content"
+            android:gravity="end"
+            android:text="24°C"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+</LinearLayout>

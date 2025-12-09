@@ -65,6 +65,18 @@ class ControlActivity : AppCompatActivity() {
         binding.textViewDeviceName.text = deviceName
         deviceRef = Firebase.database.reference.child("devices").child(deviceId!!)
 
+        deviceRef.child("control/global_mode").get().addOnSuccessListener {
+            val mode = it.getValue(String::class.java) ?: "cooling"
+            binding.switchGlobalMode.isChecked = (mode == "cooling")
+            binding.switchGlobalMode.text = if (mode == "cooling") "현재 모드: 냉방" else "현재 모드: 난방"
+        }
+
+        binding.switchGlobalMode.setOnCheckedChangeListener { _, isChecked ->
+            val newMode = if (isChecked) "cooling" else "heating"
+            binding.switchGlobalMode.text = if (isChecked) "현재 모드: 냉방" else "현재 모드: 난방"
+            deviceRef.child("control/global_mode").setValue(newMode)
+        }
+
         // 리스너 함수들 호출
         listenToDeviceChanges()
         listenToConnectionState()
@@ -109,24 +121,16 @@ class ControlActivity : AppCompatActivity() {
                     val statusNode = snapshot.child("status")
                     val controlNode = snapshot.child("control")
                     val sensorsStatusNode = statusNode.child("sensors")
-                    val sensorsControlNode = controlNode.child("sensors")
 
                     val sensorDisplayList = mutableListOf<SensorDisplayData>()
                     for (statusChild in sensorsStatusNode.children) {
                         val sensorId = statusChild.key ?: continue
-                        if (!sensorsControlNode.hasChild(sensorId)) {
-                            Log.w("ControlActivity", "데이터 불일치: control 경로에 '$sensorId'가 없습니다.")
-                            continue
-                        }
-                        val controlChild = sensorsControlNode.child(sensorId)
 
                         sensorDisplayList.add(
                             SensorDisplayData(
                                 id = sensorId,
                                 name = statusChild.child("name").getValue(String::class.java) ?: "N/A",
                                 currentTemp = statusChild.child("temp").getValue(Long::class.java) ?: 0L,
-                                targetTemp = controlChild.child("target_temp").getValue(Long::class.java) ?: 0L,
-                                mode = controlChild.child("mode").getValue(String::class.java) ?: "off",
                                 posX = statusChild.child("posX").getValue(Double::class.java) ?: 0.0,
                                 posY = statusChild.child("posY").getValue(Double::class.java) ?: 0.0
                             )
@@ -136,9 +140,11 @@ class ControlActivity : AppCompatActivity() {
                     val averageTemp = statusNode.child("current_temp").getValue(Long::class.java)?.toInt() ?: 0
                     binding.textViewCurrentTemp.text = "$averageTemp °C"
 
-                    // 대표 희망 온도를 sensor_01의 값으로 설정합니다.
-                    val representativeTargetTemp = sensorsControlNode.child("sensor_01/target_temp").getValue(Long::class.java)?.toInt() ?: 0
-                    binding.textViewTargetTempDisplay.text = "$representativeTargetTemp °C"
+                    // 대표 희망 온도는 그룹 1 (전면)
+                    val group1Target = snapshot.child("control/groups/group_1/target_temp").getValue(Long::class.java) ?: 24L
+                    binding.textViewTargetTempDisplay.text = "$group1Target °C"
+
+                    updateSensorReadings(sensorDisplayList, averageTemp)
 
                     updateSensorReadings(sensorDisplayList, averageTemp)
 
@@ -190,7 +196,7 @@ class ControlActivity : AppCompatActivity() {
                 text = "${sensorData.currentTemp}°"
                 textSize = 18f
 
-                val sizeInDp = 48
+                val sizeInDp = 36
                 val scale = resources.displayMetrics.density
                 val sizeInPixels = (sizeInDp * scale + 0.5f).toInt()
                 layoutParams = ConstraintLayout.LayoutParams(sizeInPixels, sizeInPixels)
@@ -212,8 +218,36 @@ class ControlActivity : AppCompatActivity() {
                 elevation = 8f
             }
 
+            // 클릭 리스너: 그룹 제어 다이얼로그 호출
             textView.setOnClickListener {
-                showSensorControlDialog(sensorData)
+                // 센서 ID에서 숫자 추출 (예: "sensor_01" -> 1)
+                val sensorNum = sensorData.id.replace("sensor_", "").toIntOrNull() ?: 0
+
+                var groupId = "group_1"
+                var groupTitle = "그룹 1"
+
+                // 그룹 매핑 로직 (1,2번 -> 그룹1 / 나머지 -> 그룹2)
+                if (sensorNum <= 2) {
+                    groupId = "group_1"
+                    groupTitle = "전면부 그룹 (복부)"
+                } else {
+                    groupId = "group_2"
+                    groupTitle = "후면부 그룹 (등 상하부)"
+                }
+
+                // 해당 그룹의 현재 목표 온도를 DB에서 가져온 뒤 다이얼로그 띄우기
+                deviceRef.child("control/groups/$groupId/target_temp").get().addOnSuccessListener { snapshot ->
+                    val currentGroupTarget = snapshot.getValue(Int::class.java) ?: 24
+
+                    // GroupControlDialog 호출 (새로 만든 클래스)
+                    val dialog = GroupControlDialog.newInstance(
+                        deviceId!!,
+                        groupId,
+                        groupTitle,
+                        currentGroupTarget
+                    )
+                    dialog.show(supportFragmentManager, "GroupControlDialog")
+                }
             }
 
             binding.sensorDisplayContainer.addView(textView)
@@ -248,16 +282,23 @@ class ControlActivity : AppCompatActivity() {
             .setPositiveButton("저장") { _, _ ->
                 val presetName = editTextPresetName.text.toString().trim()
                 if (presetName.isNotEmpty()) {
-                    deviceRef.child("control/sensors").get().addOnSuccessListener { dataSnapshot ->
-                        val currentSensorsControl = dataSnapshot.getValue(object : GenericTypeIndicator<Map<String, SensorControlData>>() {})
-                        if (currentSensorsControl != null) {
+                    deviceRef.child("control").get().addOnSuccessListener { dataSnapshot ->
+                        val currentGlobalMode = dataSnapshot.child("global_mode").getValue(String::class.java) ?: "cooling"
+                        val currentGroups = dataSnapshot.child("groups").value
+
+                        if (currentGroups != null) {
                             val newPresetId = "preset_${System.currentTimeMillis()}"
                             val newPreset = mapOf(
                                 "name" to presetName,
-                                "sensors" to currentSensorsControl
+                                "global_mode" to currentGlobalMode,
+                                "groups" to currentGroups
                             )
                             deviceRef.child("presets").child(newPresetId).setValue(newPreset)
-                                .addOnSuccessListener { Toast.makeText(this, "'$presetName' 프리셋이 저장되었습니다.", Toast.LENGTH_SHORT).show() }
+                                .addOnSuccessListener {
+                                    Toast.makeText(this, "'$presetName' 저장 완료", Toast.LENGTH_SHORT).show()
+                                }
+                        } else {
+                            Toast.makeText(this, "데이터를 불러오지 못했습니다.", Toast.LENGTH_SHORT).show()
                         }
                     }
                 }

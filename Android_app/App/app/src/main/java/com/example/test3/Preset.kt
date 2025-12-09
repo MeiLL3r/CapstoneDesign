@@ -6,9 +6,10 @@ data class SensorControlData(
     val target_temp: Long? = 0
 )
 
-// 프리셋 하나의 정보를 담는 클래스
+// 그룹 제어용 데이터 클래스
 data class Preset(
-    val id: String? = null, // Firebase의 키 값 (예: "preset_daily")
-    val name: String? = null, // 프리셋 이름 (예: "일상 모드")
-    val sensors: Map<String, SensorControlData>? = null // 센서별 제어 정보 맵
+    val id: String? = null,
+    val name: String? = null,
+    val globalMode: String? = null, // sensors 대신 globalMode 사용
+    val groups: Map<String, Any>? = null // sensors 대신 groups 사용
 )

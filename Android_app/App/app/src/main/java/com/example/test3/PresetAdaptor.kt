@@ -9,41 +9,43 @@ import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import com.example.test3.databinding.ItemPresetBinding
 
 class PresetAdapter(
     private val context: Context,
     private val presetList: List<Preset>,
-    var defaultPresetId: String,
-    private val onApply: (String) -> Unit,
-    private val onSetDefault: (String) -> Unit,
-    private val onDelete: (String) -> Unit
+    var defaultPresetId: String, // 변수로 선언하여 갱신 가능하게 함
+    private val onApply: (String) -> Unit // 클릭 시 적용만 처리
 ) : RecyclerView.Adapter<PresetAdapter.PresetViewHolder>() {
 
-    inner class PresetViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
-        val presetNameTextView: TextView = itemView.findViewById(R.id.textViewPresetName)
-        val defaultImageView: ImageView = itemView.findViewById(R.id.imageViewDefault)
-        val applyButton: Button = itemView.findViewById(R.id.buttonApply)
-        val setDefaultButton: Button = itemView.findViewById(R.id.buttonSetDefault)
-        val deleteButton: ImageButton = itemView.findViewById(R.id.buttonDelete)
-    }
+    inner class PresetViewHolder(val binding: ItemPresetBinding) : RecyclerView.ViewHolder(binding.root)
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PresetViewHolder {
-        val itemView = LayoutInflater.from(parent.context).inflate(R.layout.item_preset, parent, false)
-        return PresetViewHolder(itemView)
+        val binding = ItemPresetBinding.inflate(LayoutInflater.from(parent.context), parent, false)
+        return PresetViewHolder(binding)
     }
 
     override fun onBindViewHolder(holder: PresetViewHolder, position: Int) {
-        val currentPreset = presetList[position]
-        holder.presetNameTextView.text = currentPreset.name
+        val preset = presetList[position]
 
-        // 기본값 여부에 따라 별 아이콘 표시
-        holder.defaultImageView.visibility = if (currentPreset.id == defaultPresetId) View.VISIBLE else View.INVISIBLE
+        holder.binding.textViewPresetName.text = preset.name
 
-        // 버튼 클릭 리스너 설정
-        holder.applyButton.setOnClickListener { onApply(currentPreset.id!!) }
-        holder.setDefaultButton.setOnClickListener { onSetDefault(currentPreset.id!!) }
-        holder.deleteButton.setOnClickListener { onDelete(currentPreset.id!!) }
+        // 상세 정보 표시 (간략하게)
+        val mode = if (preset.globalMode == "cooling") "냉방" else "난방"
+        holder.binding.textViewPresetDetails.text = "모드: $mode"
+
+        // 기본 프리셋인지 확인하여 뱃지 표시
+        if (preset.id == defaultPresetId) {
+            holder.binding.imageViewDefaultBadge.visibility = View.VISIBLE
+        } else {
+            holder.binding.imageViewDefaultBadge.visibility = View.GONE
+        }
+
+        // 아이템 전체 클릭 시 -> 프리셋 적용
+        holder.itemView.setOnClickListener {
+            preset.id?.let { onApply(it) }
+        }
     }
 
-    override fun getItemCount() = presetList.size
+    override fun getItemCount(): Int = presetList.size
 }

@@ -4,69 +4,56 @@
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_marginStart="8dp"
-    android:layout_marginTop="8dp"
-    android:layout_marginEnd="8dp"
-    app:cardCornerRadius="8dp"
+    android:layout_marginHorizontal="16dp"
+    android:layout_marginVertical="8dp"
+    app:cardCornerRadius="12dp"
     app:cardElevation="4dp">
 
     <androidx.constraintlayout.widget.ConstraintLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
+        android:background="?attr/selectableItemBackground"
         android:padding="16dp">
 
-        <ImageView
-            android:id="@+id/imageViewDefault"
-            android:layout_width="24dp"
-            android:layout_height="24dp"
-            android:src="@drawable/ic_star"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toTopOf="parent"
-            app:tint="?attr/colorPrimary"
-            tools:visibility="visible"
-            android:contentDescription="기본 프리셋" />
-
+        <!-- 프리셋 이름 -->
         <TextView
             android:id="@+id/textViewPresetName"
             android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:layout_marginStart="16dp"
+            android:text="프리셋 이름"
+            android:textColor="#000000"
             android:textSize="18sp"
             android:textStyle="bold"
-            app:layout_constraintBottom_toBottomOf="@id/imageViewDefault"
-            app:layout_constraintStart_toEndOf="@id/imageViewDefault"
-            app:layout_constraintTop_toTopOf="@id/imageViewDefault"
-            app:layout_constraintEnd_toStartOf="@+id/buttonApply"
-            android:layout_marginEnd="16dp"
-            tools:text="일상 모드" />
+            app:layout_constraintEnd_toStartOf="@+id/imageViewDefaultBadge"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent" />
 
-        <ImageButton
-            android:id="@+id/buttonDelete"
-            android:layout_width="48dp"
-            android:layout_height="48dp"
-            android:src="@drawable/ic_delete_outline"
-            style="?attr/materialIconButtonStyle"
+        <!-- 프리셋 상세 정보 -->
+        <TextView
+            android:id="@+id/textViewPresetDetails"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:text="모드: 냉방 | G1: 24°C G2: 24°C"
+            android:textColor="#888888"
+            android:textSize="14sp"
+            app:layout_constraintEnd_toEndOf="@+id/textViewPresetName"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/textViewPresetName" />
+
+        <!-- 기본 프리셋 뱃지 (기본값일 때) -->
+        <ImageView
+            android:id="@+id/imageViewDefaultBadge"
+            android:layout_width="36dp"
+            android:layout_height="36dp"
+            android:src="@drawable/ic_star"
+            android:visibility="gone"
+            app:tint="@color/purple_500"
+            app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent"
             app:layout_constraintTop_toTopOf="parent"
-            android:contentDescription="삭제" />
-
-        <Button
-            android:id="@+id/buttonSetDefault"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_marginTop="16dp"
-            android:text="기본값으로"
-            style="?attr/materialButtonOutlinedStyle"
-            app:layout_constraintStart_toStartOf="parent"
-            app:layout_constraintTop_toBottomOf="@id/textViewPresetName" />
-
-        <Button
-            android:id="@+id/buttonApply"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="적용"
-            app:layout_constraintEnd_toEndOf="parent"
-            app:layout_constraintTop_toTopOf="@id/buttonSetDefault" />
+            tools:visibility="visible" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
+
 </androidx.cardview.widget.CardView>
