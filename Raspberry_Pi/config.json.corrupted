@@ -1,0 +1,58 @@
+{
+    "device_id": "234",
+    "device_password": "0000",
+    "sensors_config": {
+        "sensor_01": {
+            "name": "복부 우측",
+            "posX": 0.24,
+            "posY": 0.55
+        },
+        "sensor_02": {
+            "name": "복부 좌측",
+            "posX": 0.35,
+            "posY": 0.55
+        },
+        "sensor_03": {
+            "name": "등 좌측",
+            "posX": 0.65,
+            "posY": 0.45
+        },
+        "sensor_04": {
+            "name": "등 우측",
+            "posX": 0.77,
+            "posY": 0.45
+        },
+        "sensor_05": {
+            "name": "등 하부",
+            "posX": 0.71,
+            "posY": 0.6
+        }
+    },
+    "default_preset": "preset_daily",
+    "presets": {
+        "preset_daily": {
+            "name": "일상 모드",
+            "global_mode": "cooling",
+            "groups": {
+                "group_1": {
+                    "target_temp": 24
+                },
+                "group_2": {
+                    "target_temp": 24
+                }
+            }
+        }
+    },
+    "last_control_state": {
+        "global_mode": "cooling",
+        "groups": {
+            "group_1": {
+                "target_temp": 24
+            },
+            "group_2": {
+                "target_temp": 24
+            }
+        },
+        "preset_applied": "preset_daily"
+    }
+}

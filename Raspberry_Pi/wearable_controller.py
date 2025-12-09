@@ -60,6 +60,17 @@ def validate_and_load_config(config_path):
             os.rename(config_path, corrupted_path)
             print(f"손상된 설정 파일을 '{corrupted_path}'로 백업했습니다.")
         return False
+    
+def save_config_to_file():
+    global config_data
+    try:
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        config_path = os.path.join(script_dir, CONFIG_FILE)
+        with open(config_path, 'w', encoding='utf-8') as f:
+            json.dump(config_data, f, indent=4, ensure_ascii=False)
+        # print("💾 설정 파일 저장됨") 
+    except Exception as e:
+        print(f"❌ 설정 저장 실패: {e}")
 
 def setup_device_and_config():
     global device_id, config_data
@@ -73,17 +84,22 @@ def setup_device_and_config():
 
     # 기본 센서 설정 데이터 (물리적 정보)
     default_sensors_config = {
-        'sensor_01': {'name': '왼쪽 팔', 'posX': 0.15, 'posY': 0.45},
-        'sensor_02': {'name': '가슴 중앙', 'posX': 0.29, 'posY': 0.4},
-        'sensor_03': {'name': '등 중앙', 'posX': 0.71, 'posY': 0.5},
-        'sensor_04': {'name': '오른쪽 팔', 'posX': 0.43, 'posY': 0.45}
+        'sensor_01': {'name': '복부 우측', 'posX': 0.24, 'posY': 0.55},
+        'sensor_02': {'name': '복부 좌측', 'posX': 0.35, 'posY': 0.55},
+        'sensor_03': {'name': '등 좌측', 'posX': 0.65, 'posY': 0.45},
+        'sensor_04': {'name': '등 우측', 'posX': 0.77, 'posY': 0.45},
+        'sensor_05': {'name': '등 하부', 'posX': 0.71, 'posY': 0.6}
     }
     
-    default_preset_sensors = {
-        'sensor_01': {'mode': 'heating', 'target_temp': 22},
-        'sensor_02': {'mode': 'heating', 'target_temp': 24},
-        'sensor_03': {'mode': 'heating', 'target_temp': 25},
-        'sensor_04': {'mode': 'heating', 'target_temp': 25}
+    default_presets = {
+        'preset_daily': {
+            'name': '일상 모드',
+            'global_mode': 'cooling', # 전역 모드
+            'groups': {
+                'group_1': {'target_temp': 24},
+                'group_2': {'target_temp': 24}
+            }
+        }
     }
 
     # config.json에 저장할 데이터 구성
@@ -92,12 +108,7 @@ def setup_device_and_config():
         'device_password': device_password,
         'sensors_config': default_sensors_config,
         'default_preset': 'preset_daily',
-        'presets': {
-            'preset_daily': {
-                'name': '일상 모드',
-                'sensors': default_preset_sensors
-            }
-        }
+        'presets': default_presets,
     }
 
     # 설정 파일 저장
@@ -119,6 +130,8 @@ def upload_initial_config_to_firebase():
     try:
         ref = db.reference(f'devices/{device_id}', app=firebase_app)
         
+        sensors_config = config_data.get('sensors_config', {})
+        
         # 센서 config에서 temp 필드 추가 후 status 데이터 생성
         status_sensors = {
             sensor_id: {**info, 'temp': 0} for sensor_id, info in config_data['sensors_config'].items()
@@ -133,11 +146,15 @@ def upload_initial_config_to_firebase():
                 'last_seen': 0
             },
             'control': {
-                'preset_applied': config_data['default_preset'],
-                'sensors': config_data['presets'][config_data['default_preset']]['sensors'] # <-- control/sensors 구조 추가
+                'global_mode': 'cooling',
+                'groups': {
+                    'group_1': {'target_temp': 24}, # Sensor 1, 2
+                    'group_2': {'target_temp': 24}  # Sensor 3, 4, 5
+                }
             },
             'status': {
-                'current_temp': 25,
+                'current_temp': 0,
+                # 센서 초기화 (temp:0)
                 'sensors': status_sensors
             },
             'presets': config_data['presets']
@@ -317,57 +334,82 @@ def set_connection_status(status):
 def setup_firebase_listeners():
     global listener
     print("Firebase 리스너 설정을 시작합니다.")
-    control_ref = db.reference(f'devices/{device_id}/control/sensors', app=firebase_app)
+    control_ref = db.reference(f'devices/{device_id}/control', app=firebase_app)
     listener = control_ref.listen(control_listener)
     print("📡 Firebase 제어 데이터 감시 시작...")
 
 def control_listener(event):
-    print(f"🔥 Firebase 제어 데이터 감지: 경로({event.path}), 데이터({event.data})")
+    if not event.data: return
+    print(f"🔥 제어 변경 감지: {event.path} -> {event.data}")
     
-    path_parts = event.path.strip("/").split("/")
-    if len(path_parts) == 2:
-        sensor_id, key = path_parts
-        value = event.data
+    # 전체 데이터를 가져와서 처리
+    try:
+        root_ref = db.reference(f'devices/{device_id}/control', app=firebase_app)
+        full_control = root_ref.get()
         
-        # sensor_01 -> 1, sensor_02 -> 2
-        try:
-            sensor_index = int(sensor_id.split('_')[-1])
-        except (ValueError, IndexError):
-            print(f"잘못된 센서 ID 형식: {sensor_id}")
-            return
+        if not full_control: return
+
+        mode = full_control.get('global_mode', 'off').upper()
+        temp_g1 = full_control.get('groups', {}).get('group_1', {}).get('target_temp', 25)
+        temp_g2 = full_control.get('groups', {}).get('group_2', {}).get('target_temp', 25)
 
         if arduino and arduino.is_open:
-            if key == 'mode':
-                command = f"MODE:{sensor_index}:{str(value).upper()}\n"
-                arduino.write(command.encode())
-                print(f"-> 아두이노 전송: {command.strip()}")
-            elif key == 'target_temp':
-                command = f"TEMP:{sensor_index}:{value}\n"
-                arduino.write(command.encode())
-                print(f"-> 아두이노 전송: {command.strip()}")
+            # 아두이노 프로토콜: CMD:그룹:모드:온도
+            cmd_a = f"CMD:A:{mode}:{temp_g1}\n"
+            cmd_b = f"CMD:B:{mode}:{temp_g2}\n"
+            
+            arduino.write(cmd_a.encode())
+            time.sleep(0.05)
+            arduino.write(cmd_b.encode())
+            print(f"-> 전송: {cmd_a.strip()}, {cmd_b.strip()}")
+            
+    except Exception as e:
+        print(f"명령 처리 중 오류: {e}")
+
+    try:
+        full_control = db.reference(f'devices/{device_id}/control', app=firebase_app).get()
+        if full_control:
+            config_data['last_control_state'] = full_control
+            save_config_to_file()
+    except Exception as e:
+        print(f"설정 저장 중 오류: {e}")
+
+def presets_listener(event):
+    if not event.data: return
+    
+    try:
+        print("📥 프리셋 변경 감지 -> 파일 저장")
+        # 전체 프리셋을 가져와서 config.json에 덮어쓰기
+        full_presets = db.reference(f'devices/{device_id}/presets', app=firebase_app).get()
+        if full_presets:
+            config_data['presets'] = full_presets
+            save_config_to_file()
+    except Exception as e:
+        print(f"프리셋 동기화 실패: {e}")
 
 def apply_preset_to_arduino(preset_id):
-    if preset_id in config_data.get('presets', {}):
-        print(f"프리셋 '{preset_id}'를 아두이노에 적용합니다...")
-        preset_sensors = config_data['presets'][preset_id]['sensors']
-        for sensor_id, settings in preset_sensors.items():
-            try:
-                sensor_index = int(sensor_id.split('_')[-1])
-                mode = settings['mode']
-                temp = settings['target_temp']
-                
-                if arduino and arduino.is_open:
-                    mode_command = f"MODE:{sensor_index}:{mode.upper()}\n"
-                    temp_command = f"TEMP:{sensor_index}:{temp}\n"
-                    arduino.write(mode_command.encode())
-                    time.sleep(0.05) # 아두이노 버퍼를 위한 짧은 딜레이
-                    arduino.write(temp_command.encode())
-                    time.sleep(0.05)
-                    print(f" -> {sensor_id}: {mode.upper()}, {temp}°C 전송")
-            except (ValueError, IndexError):
-                print(f"잘못된 센서 ID 형식: {sensor_id}")
-    else:
-        print(f"경고: '{preset_id}' 프리셋을 찾을 수 없습니다.")
+    if preset_id not in config_data.get('presets', {}): return
+
+    print(f"프리셋 '{preset_id}' 적용 중...")
+    preset_data = config_data['presets'][preset_id]
+    
+    try:
+        # 1. 데이터 파싱 (구조가 control 노드와 동일함)
+        mode = preset_data.get('global_mode', 'off').upper()
+        g1 = preset_data.get('groups', {}).get('group_1', {}).get('target_temp', 24)
+        g2 = preset_data.get('groups', {}).get('group_2', {}).get('target_temp', 24)
+
+        # 2. 아두이노 전송
+        if arduino and arduino.is_open:
+            cmd_a = f"CMD:A:{mode}:{g1}\n"
+            cmd_b = f"CMD:B:{mode}:{g2}\n"
+            arduino.write(cmd_a.encode())
+            time.sleep(0.05)
+            arduino.write(cmd_b.encode())
+            print(f"-> 프리셋 전송: {cmd_a.strip()} / {cmd_b.strip()}")
+            
+    except Exception as e:
+        print(f"프리셋 적용 실패: {e}")
 
 # --- 4. 아두이노 통신 (백그라운드 스레드) ---
 def arduino_thread_worker():
@@ -384,18 +426,19 @@ def arduino_thread_worker():
                 line = arduino.readline().decode('utf-8').strip()
                 if line.startswith("SENSORS:") and firebase_is_connected:
                     try:
+                        # SENSORS:24,25,26,26,25
                         parts = line.split(":")[1].split(",")
-                        if len(parts) == len(config_data['sensors_config']):
+                        if len(parts) == 5:
                             temps = [int(p) for p in parts]
-                            print(f"<- 아두이노 수신: {temps}")
+                            avg_temp = sum(temps) // 5
                             
-                            avg_temp = sum(temps) // len(temps)
-                            status_ref = db.reference(f'devices/{device_id}/status', app=firebase_app)
                             updates = {'current_temp': avg_temp}
-                            # config.json에 정의된 센서 ID 순서대로 매핑
-                            for i, sensor_id in enumerate(config_data['sensors_config']):
-                                updates[f'sensors/{sensor_id}/temp'] = temps[i]
-                            status_ref.update(updates)
+                            # 센서 1~5 매핑
+                            for i in range(5):
+                                sensor_key = f'sensor_{i+1:02d}' # sensor_01 ~ 05
+                                updates[f'sensors/{sensor_key}/temp'] = temps[i]
+                            
+                            db.reference(f'devices/{device_id}/status', app=firebase_app).update(updates)
                     except Exception as e:
                         print(f"아두이노 데이터 처리 중 오류: {e}")
 
