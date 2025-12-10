@@ -15,36 +15,35 @@ const int B_PIN_LPWM = 7;
 const int B_PIN_REN  = 4;
 const int B_PIN_LEN  = 5;
 
-// --- 센서 (5개) ---
-const int SENSORS[5] = {A0, A1, A2, A3, A4}; // 1~5번 센서
-
 // =========================================================
-// 2. 제어 변수
+// 2. 제어 및 시뮬레이션 변수
 // =========================================================
-double Kp = 40.0, Ki = 0.5, Kd = 1.0;
+double Kp = 10.0; // 반응성 조절 (크면 PWM이 빨리 올라감)
 
 struct GroupControl {
   String mode;        // "COOLING", "HEATING", "OFF"
-  double targetTemp;
-  double currentAvgTemp; // 그룹 내 센서 평균값
-  double errorSum;
-  double lastError;
+  double targetTemp;  // 목표 온도
+  double currentSimTemp; // 가상 현재 온도 (시뮬레이션 값)
+  int currentPWM;     // 현재 출력 중인 PWM
 };
 
 GroupControl groups[2]; // Group 0(A), Group 1(B)
-double sensorValues[5]; // 개별 센서값 저장용
 
-const int PID_INTERVAL = 200;
-unsigned long lastPidTime = 0;
+// 5개 센서의 가상 값을 저장할 배열
+double simulatedSensors[5]; 
 
-// 서미스터 상수 (사용하는 센서에 맞춰 수정 필수)
-const float SERIES_RESISTOR = 10000;
-const float NOMINAL_RESISTOR = 10000;
-const float NOMINAL_TEMP = 25;
-const float B_COEFFICIENT = 3950;
+// 시뮬레이션 상수
+const double AMBIENT_TEMP = 30.0; // 기본 체온/실온 가정
+const double TEMP_FACTOR = 0.15;  // PWM 1당 온도 변화량 (데이터 기반: 100PWM -> 15도 변화)
+const double SMOOTHING = 0.1;     // 온도 변화 부드러움 정도 (0.0 ~ 1.0)
+
+const int LOOP_INTERVAL = 200;
+unsigned long lastLoopTime = 0;
 
 void setup() {
   Serial.begin(9600);
+  
+  // 핀 설정
   pinMode(A_PIN_RPWM, OUTPUT); pinMode(A_PIN_LPWM, OUTPUT);
   pinMode(A_PIN_REN, OUTPUT);  pinMode(A_PIN_LEN, OUTPUT);
   pinMode(B_PIN_RPWM, OUTPUT); pinMode(B_PIN_LPWM, OUTPUT);
@@ -53,126 +52,146 @@ void setup() {
   // 초기화
   for(int i=0; i<2; i++) {
     groups[i].mode = "OFF";
-    groups[i].targetTemp = 25.0;
-    groups[i].errorSum = 0;
+    groups[i].targetTemp = 24.0; // 초기 목표값
+    groups[i].currentSimTemp = AMBIENT_TEMP;
+    groups[i].currentPWM = 0;
   }
+  
+  // 센서 초기값 설정
+  for(int i=0; i<5; i++) simulatedSensors[i] = AMBIENT_TEMP;
 }
 
 void loop() {
-  // 1. 명령 수신 (CMD:GROUP:MODE:TEMP 형식)
-  // 예: CMD:A:COOLING:24
+  // 1. 명령 수신 (CMD:GROUP:MODE:TEMP)
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     parseCommand(cmd);
   }
 
-  // 2. PID 제어 루프
-  if (millis() - lastPidTime >= PID_INTERVAL) {
-    lastPidTime = millis();
+  // 2. 제어 및 시뮬레이션 루프
+  if (millis() - lastLoopTime >= LOOP_INTERVAL) {
+    lastLoopTime = millis();
 
-    // 모든 센서 읽기
-    for(int i=0; i<5; i++) {
-      sensorValues[i] = readThermistor(SENSORS[i]);
-    }
+    // 그룹별 PWM 계산 및 가상 온도 업데이트
+    updateGroupLogic(0); // Driver A
+    updateGroupLogic(1); // Driver B
 
-    // 그룹별 현재 온도 계산 (평균)
-    groups[0].currentAvgTemp = (sensorValues[0] + sensorValues[1]) / 2.0;
-    groups[1].currentAvgTemp = (sensorValues[2] + sensorValues[3] + sensorValues[4]) / 3.0;
+    // 가상 센서값 매핑 (Group A -> Sensor 1,2 / Group B -> Sensor 3,4,5)
+    mapSensors();
 
-    // PID 계산 및 구동
-    applyToDriver(0, calculatePID(0)); // Driver A
-    applyToDriver(1, calculatePID(1)); // Driver B
+    // 하드웨어 구동 (실제 모터 드라이버)
+    applyToDriver(0, groups[0].currentPWM);
+    applyToDriver(1, groups[1].currentPWM);
 
-    // 상태 전송 (SENSORS:t1,t2,t3,t4,t5)
+    // 데이터 전송 (기존 포맷 유지)
     sendSensorData();
   }
 }
 
-// --- PID 계산 ---
-int calculatePID(int groupIdx) {
-  if (groups[groupIdx].mode == "OFF") return 0;
+// --- 그룹 로직 (PWM 계산 + 온도 시뮬레이션) ---
+void updateGroupLogic(int idx) {
+  double target = groups[idx].targetTemp;
+  double current = groups[idx].currentSimTemp;
+  String mode = groups[idx].mode;
+  int targetPWM = 0;
 
-  double error = groups[groupIdx].targetTemp - groups[groupIdx].currentAvgTemp;
-  groups[groupIdx].errorSum += error;
-  
-  // Windup 방지
-  if (groups[groupIdx].errorSum > 100) groups[groupIdx].errorSum = 100;
-  if (groups[groupIdx].errorSum < -100) groups[groupIdx].errorSum = -100;
-
-  double dError = error - groups[groupIdx].lastError;
-  groups[groupIdx].lastError = error;
-
-  double output = (Kp * error) + (Ki * groups[groupIdx].errorSum) + (Kd * dError);
-  int pwm = (int)output;
-
-  // 단방향 제어 로직 (모드에 따라 역방향 차단)
-  if (groups[groupIdx].mode == "COOLING") {
-    if (pwm > 0) pwm = 0; // 가열 방향 차단
-  } else if (groups[groupIdx].mode == "HEATING") {
-    if (pwm < 0) pwm = 0; // 냉각 방향 차단
+  // 1) 목표 PWM 계산 (P제어)
+  if (mode == "COOLING") {
+    // 목표가 현재보다 낮으면 PWM 증가
+    double error = current - target; 
+    if (error > 0) targetPWM = (int)(error * Kp * 5); // Gain 조정
+  } 
+  else if (mode == "HEATING") {
+    // 목표가 현재보다 높으면 PWM 증가
+    double error = target - current;
+    if (error > 0) targetPWM = (int)(error * Kp * 5);
   }
+  
+  // PWM 범위 제한
+  targetPWM = constrain(targetPWM, 0, 255);
+  if (mode == "OFF") targetPWM = 0;
 
-  return constrain(pwm, -255, 255);
+  // 실제 출력 PWM을 부드럽게 변경 (급발진 방지)
+  if (groups[idx].currentPWM < targetPWM) groups[idx].currentPWM++;
+  else if (groups[idx].currentPWM > targetPWM) groups[idx].currentPWM--;
+  
+  // 2) 가상 온도 시뮬레이션 (PWM -> 온도 변환)
+  // 엑셀 데이터: PWM이 높을수록 온도가 변함
+  double theoreticalTemp = AMBIENT_TEMP;
+  
+  if (mode == "COOLING") {
+    // 냉방: PWM이 높을수록 온도가 내려감 (30 -> 25)
+    theoreticalTemp = AMBIENT_TEMP - (groups[idx].currentPWM * TEMP_FACTOR);
+  } 
+  else if (mode == "HEATING") {
+    // 난방: PWM이 높을수록 온도가 올라감 (30 -> 35)
+    theoreticalTemp = AMBIENT_TEMP + (groups[idx].currentPWM * TEMP_FACTOR);
+  }
+  
+  // 실제 온도처럼 서서히 변하게 함 (Low Pass Filter)
+  groups[idx].currentSimTemp = (groups[idx].currentSimTemp * (1.0 - SMOOTHING)) + (theoreticalTemp * SMOOTHING);
+}
+
+// --- 가상 센서값 매핑 ---
+void mapSensors() {
+  // Group A의 가상 온도를 센서 1, 2에 배분 (랜덤 노이즈 추가)
+  simulatedSensors[0] = groups[0].currentSimTemp + random(-10, 10)/100.0;
+  simulatedSensors[1] = groups[0].currentSimTemp + random(-10, 10)/100.0;
+  
+  // Group B의 가상 온도를 센서 3, 4, 5에 배분
+  simulatedSensors[2] = groups[1].currentSimTemp + random(-10, 10)/100.0;
+  simulatedSensors[3] = groups[1].currentSimTemp + random(-10, 10)/100.0;
+  simulatedSensors[4] = groups[1].currentSimTemp + random(-10, 10)/100.0;
 }
 
 // --- 하드웨어 구동 ---
-void applyToDriver(int groupIdx, int pwm) {
-  int r_pin = (groupIdx == 0) ? A_PIN_RPWM : B_PIN_RPWM;
-  int l_pin = (groupIdx == 0) ? A_PIN_LPWM : B_PIN_LPWM;
-  int ren   = (groupIdx == 0) ? A_PIN_REN  : B_PIN_REN;
-  int len   = (groupIdx == 0) ? A_PIN_LEN  : B_PIN_LEN;
+void applyToDriver(int idx, int pwm) {
+  int r_pin = (idx == 0) ? A_PIN_RPWM : B_PIN_RPWM;
+  int l_pin = (idx == 0) ? A_PIN_LPWM : B_PIN_LPWM;
+  int ren   = (idx == 0) ? A_PIN_REN  : B_PIN_REN;
+  int len   = (idx == 0) ? A_PIN_LEN  : B_PIN_LEN;
+  String mode = groups[idx].mode;
 
   digitalWrite(ren, HIGH);
   digitalWrite(len, HIGH);
 
-  if (pwm == 0) {
+  if (pwm <= 5) { // Deadzone
     analogWrite(r_pin, 0); analogWrite(l_pin, 0);
-  } else if (pwm > 0) { // 정방향 (Heating 가정)
+  } 
+  else if (mode == "HEATING") { // 정방향
     analogWrite(r_pin, pwm); analogWrite(l_pin, 0);
-  } else { // 역방향 (Cooling 가정)
-    analogWrite(r_pin, 0); analogWrite(l_pin, abs(pwm));
+  } 
+  else if (mode == "COOLING") { // 역방향
+    analogWrite(r_pin, 0); analogWrite(l_pin, pwm);
+  }
+  else {
+    analogWrite(r_pin, 0); analogWrite(l_pin, 0);
   }
 }
 
 // --- 명령 파싱 ---
 void parseCommand(String cmd) {
-  cmd.trim(); // CMD:A:COOLING:24
+  cmd.trim(); 
   if (!cmd.startsWith("CMD:")) return;
-  
+  // CMD:A:COOLING:24
   int first = cmd.indexOf(':');
   int second = cmd.indexOf(':', first + 1);
   int third = cmd.indexOf(':', second + 1);
 
-  String groupChar = cmd.substring(first + 1, second); // A or B
-  String modeStr = cmd.substring(second + 1, third);   // COOLING
-  String tempStr = cmd.substring(third + 1);           // 24
+  String groupChar = cmd.substring(first + 1, second);
+  String modeStr = cmd.substring(second + 1, third);
+  String tempStr = cmd.substring(third + 1);
 
   int idx = (groupChar == "A") ? 0 : 1;
-  
   groups[idx].mode = modeStr;
   groups[idx].targetTemp = tempStr.toDouble();
-  groups[idx].errorSum = 0; // 모드/온도 변경시 적분 초기화
-}
-
-// --- 센서 읽기 ---
-double readThermistor(int pin) {
-  int raw = analogRead(pin);
-  if (raw == 0) return 0;
-  float resistance = SERIES_RESISTOR / (1023.0 / raw - 1);
-  float steinhart = resistance / NOMINAL_RESISTOR;
-  steinhart = log(steinhart);
-  steinhart /= B_COEFFICIENT;
-  steinhart += 1.0 / (NOMINAL_TEMP + 273.15);
-  steinhart = 1.0 / steinhart;
-  steinhart -= 273.15;
-  return steinhart;
 }
 
 // --- 데이터 전송 ---
 void sendSensorData() {
   Serial.print("SENSORS:");
   for(int i=0; i<5; i++) {
-    Serial.print((int)sensorValues[i]);
+    Serial.print((int)simulatedSensors[i]); // 정수로 보내기
     if(i < 4) Serial.print(",");
   }
   Serial.println();
