@@ -84,11 +84,11 @@ def setup_device_and_config():
 
     # 기본 센서 설정 데이터 (물리적 정보)
     default_sensors_config = {
-        'sensor_01': {'name': '복부 우측', 'posX': 0.24, 'posY': 0.55},
-        'sensor_02': {'name': '복부 좌측', 'posX': 0.35, 'posY': 0.55},
-        'sensor_03': {'name': '등 좌측', 'posX': 0.65, 'posY': 0.45},
-        'sensor_04': {'name': '등 우측', 'posX': 0.77, 'posY': 0.45},
-        'sensor_05': {'name': '등 하부', 'posX': 0.71, 'posY': 0.6}
+        'sensor_01': {'name': '복부 우측', 'posX': 0.16, 'posY': 0.55},
+        'sensor_02': {'name': '복부 좌측', 'posX': 0.30, 'posY': 0.55},
+        'sensor_03': {'name': '등 좌측', 'posX': 0.70, 'posY': 0.45},
+        'sensor_04': {'name': '등 우측', 'posX': 0.84, 'posY': 0.45},
+        'sensor_05': {'name': '등 하부', 'posX': 0.77, 'posY': 0.6}
     }
     
     default_presets = {
