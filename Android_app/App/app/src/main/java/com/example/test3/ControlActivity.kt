@@ -254,11 +254,12 @@ class ControlActivity : AppCompatActivity() {
             sensorViews.add(textView)
 
             val constraintSet = ConstraintSet()
+            val targetId = binding.imageViewBody.id
             constraintSet.clone(binding.sensorDisplayContainer)
-            constraintSet.connect(textView.id, ConstraintSet.TOP, ConstraintSet.PARENT_ID, ConstraintSet.TOP)
-            constraintSet.connect(textView.id, ConstraintSet.BOTTOM, ConstraintSet.PARENT_ID, ConstraintSet.BOTTOM)
-            constraintSet.connect(textView.id, ConstraintSet.START, ConstraintSet.PARENT_ID, ConstraintSet.START)
-            constraintSet.connect(textView.id, ConstraintSet.END, ConstraintSet.PARENT_ID, ConstraintSet.END)
+            constraintSet.connect(textView.id, ConstraintSet.TOP, targetId, ConstraintSet.TOP)
+            constraintSet.connect(textView.id, ConstraintSet.BOTTOM, targetId, ConstraintSet.BOTTOM)
+            constraintSet.connect(textView.id, ConstraintSet.START, targetId, ConstraintSet.START)
+            constraintSet.connect(textView.id, ConstraintSet.END, targetId, ConstraintSet.END)
             constraintSet.setHorizontalBias(textView.id, sensorData.posX?.toFloat() ?: 0.5f)
             constraintSet.setVerticalBias(textView.id, sensorData.posY?.toFloat() ?: 0.5f)
             constraintSet.applyTo(binding.sensorDisplayContainer)

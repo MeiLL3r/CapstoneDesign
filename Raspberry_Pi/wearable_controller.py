@@ -34,7 +34,7 @@ def validate_and_load_config(config_path):
     global config_data, device_id
     print("설정 파일을 검증하고 로드합니다...")
     try:
-        with open(config_path, 'r') as f:
+        with open(config_path, 'r', encoding = 'utf-8') as f:
             config_data = json.load(f)
         
         # 필수 키 검증
@@ -114,7 +114,7 @@ def setup_device_and_config():
     # 설정 파일 저장
     script_dir = os.path.dirname(os.path.abspath(__file__))
     config_path = os.path.join(script_dir, CONFIG_FILE)
-    with open(config_path, 'w') as f:
+    with open(config_path, 'w', encoding = 'utf-8') as f:
         json.dump(config_data, f, indent=4)
     print(f"✅ 설정 파일 '{config_path}' 생성 완료.")
     
@@ -232,7 +232,7 @@ def sync_config_with_firebase():
             print("프리셋 정보가 동기화되어 config.json을 업데이트합니다.")
             script_dir = os.path.dirname(os.path.abspath(__file__))
             config_path = os.path.join(script_dir, CONFIG_FILE)
-            with open(config_path, 'w') as f:
+            with open(config_path, 'w', encoding = 'utf-8') as f:
                 json.dump(config_data, f, indent=4)
         
         print("✅ 설정 동기화 완료.")
