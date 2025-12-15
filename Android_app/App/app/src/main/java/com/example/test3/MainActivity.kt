@@ -186,7 +186,7 @@ class MainActivity : AppCompatActivity() {
                     val statusFromDB = deviceSnapshot.child("connection/status").getValue(String::class.java) ?: "offline"
                     val lastSeen = deviceSnapshot.child("connection/last_seen").getValue(Long::class.java) ?: 0L
                     val deviceMode = deviceSnapshot.child("control/sensors/sensor_01/mode").getValue(String::class.java) ?: "cooling"
-                    val deviceTargetTemp = deviceSnapshot.child("control/sensors/sensor_01/target_temp").getValue(Int::class.java) ?: 0
+                    val deviceTargetTemp = deviceSnapshot.child("control/groups/group_1/target_temp").getValue(Int::class.java) ?: 0
 
                     // 2. '감시자' 로직: lastSeen을 기반으로 실제 상태(effectiveStatus)를 결정합니다.
                     val effectiveStatus: String // 최종 상태를 담을 변수
