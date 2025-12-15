@@ -20,8 +20,8 @@ class GroupControlDialog : DialogFragment() {
     private lateinit var groupTitle: String
     private var initialTemp: Int = 24
 
-    private val MIN_TEMP = 16
-    private val MAX_TEMP = 30
+    private val MIN_TEMP = 24
+    private val MAX_TEMP = 28
 
     companion object {
         fun newInstance(deviceId: String, groupId: String, groupTitle: String, currentTemp: Int): GroupControlDialog {

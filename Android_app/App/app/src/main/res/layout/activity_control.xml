@@ -81,7 +81,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="현재 온도 (대표)"
+                    android:text="평균 온도"
                     android:textSize="18sp" />
 
                 <TextView
