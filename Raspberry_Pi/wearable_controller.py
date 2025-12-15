@@ -413,29 +413,59 @@ def apply_preset_to_arduino(preset_id):
 
 # --- 4. 아두이노 통신 (백그라운드 스레드) ---
 def arduino_thread_worker():
-    global arduino
+    global arduino, config_data
+    
+    last_resend_time = 0
+    RESEND_INTERVAL = 3  # 3초마다 명령 재전송 (상태 동기화)
+
     while main_loop_running:
         try:
             if arduino is None or not arduino.is_open:
                 print("아두이노 연결을 시도합니다...")
+                # 포트 번호 확인 필요
                 arduino = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=1)
-                time.sleep(2)
+                time.sleep(2) # 아두이노 리셋 대기
                 print(f"✅ 아두이노 연결 성공 ({ARDUINO_PORT})")
 
+            # 주기적으로 현재 제어 상태를 아두이노에 재전송 (싱크 맞추기)
+            if firebase_is_connected and (time.time() - last_resend_time > RESEND_INTERVAL):
+                try:
+                    # 현재 Firebase/Config에 저장된 최신 상태 가져오기
+                    # (control_listener가 config_data['last_control_state']에 저장한다고 가정하거나 Firebase에서 읽음)
+                    control_ref = db.reference(f'devices/{device_id}/control', app=firebase_app)
+                    current_state = control_ref.get()
+                    
+                    if current_state:
+                        mode = current_state.get('global_mode', 'off').upper()
+                        t1 = current_state.get('groups', {}).get('group_1', {}).get('target_temp', 24)
+                        t2 = current_state.get('groups', {}).get('group_2', {}).get('target_temp', 24)
+                        
+                        cmd_a = f"CMD:A:{mode}:{t1}\n"
+                        cmd_b = f"CMD:B:{mode}:{t2}\n"
+                        
+                        arduino.write(cmd_a.encode())
+                        time.sleep(0.05)
+                        arduino.write(cmd_b.encode())
+                        # print(f"🔄 상태 동기화: {mode}, {t1}, {t2}") # 디버깅용
+                        
+                    last_resend_time = time.time()
+                except Exception as e:
+                    print(f"상태 재전송 중 오류: {e}")
+
+            # 아두이노 데이터 수신 처리
             if arduino.in_waiting > 0:
-                line = arduino.readline().decode('utf-8').strip()
+                line = arduino.readline().decode('utf-8', errors='ignore').strip()
                 if line.startswith("SENSORS:") and firebase_is_connected:
                     try:
                         # SENSORS:24,25,26,26,25
                         parts = line.split(":")[1].split(",")
                         if len(parts) == 5:
-                            temps = [int(p) for p in parts]
+                            temps = [int(float(p)) for p in parts] # float 파싱 후 int 변환으로 안전성 확보
                             avg_temp = sum(temps) // 5
                             
                             updates = {'current_temp': avg_temp}
-                            # 센서 1~5 매핑
                             for i in range(5):
-                                sensor_key = f'sensor_{i+1:02d}' # sensor_01 ~ 05
+                                sensor_key = f'sensor_{i+1:02d}' 
                                 updates[f'sensors/{sensor_key}/temp'] = temps[i]
                             
                             db.reference(f'devices/{device_id}/status', app=firebase_app).update(updates)
@@ -449,6 +479,7 @@ def arduino_thread_worker():
             time.sleep(5)
         except Exception as e:
             print(f"아두이노 통신 중 심각한 오류: {e}")
+        
         time.sleep(0.1)
 
 # --- 5. 프로그램 종료 처리 ---

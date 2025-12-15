@@ -171,16 +171,22 @@ void applyToDriver(int idx, int pwm) {
 
 // --- 명령 파싱 ---
 void parseCommand(String cmd) {
-  cmd.trim(); 
+  cmd.trim(); // 전체 문자열 공백 제거
   if (!cmd.startsWith("CMD:")) return;
   // CMD:A:COOLING:24
   int first = cmd.indexOf(':');
   int second = cmd.indexOf(':', first + 1);
   int third = cmd.indexOf(':', second + 1);
 
+  if (first == -1 || second == -1 || third == -1) return; // 파싱 오류 방지
+
   String groupChar = cmd.substring(first + 1, second);
   String modeStr = cmd.substring(second + 1, third);
   String tempStr = cmd.substring(third + 1);
+
+  groupChar.trim();
+  modeStr.trim();
+  tempStr.trim();
 
   int idx = (groupChar == "A") ? 0 : 1;
   groups[idx].mode = modeStr;
