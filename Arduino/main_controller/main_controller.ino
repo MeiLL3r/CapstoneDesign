@@ -34,6 +34,8 @@ double simulatedSensors[5];
 
 // 시뮬레이션 상수
 const double AMBIENT_TEMP = 30.0; // 기본 체온/실온 가정
+const double AMBIENT_TEMP_COOLING = 30.0;
+const double AMBIENT_TEMP_HEATING = 26.0;
 const double TEMP_FACTOR = 0.15;  // PWM 1당 온도 변화량 (데이터 기반: 100PWM -> 15도 변화)
 const double SMOOTHING = 0.1;     // 온도 변화 부드러움 정도 (0.0 ~ 1.0)
 
@@ -121,11 +123,11 @@ void updateGroupLogic(int idx) {
   
   if (mode == "COOLING") {
     // 냉방: PWM이 높을수록 온도가 내려감 (30 -> 25)
-    theoreticalTemp = AMBIENT_TEMP - (groups[idx].currentPWM * TEMP_FACTOR);
+    theoreticalTemp = AMBIENT_TEMP_COOLING - (groups[idx].currentPWM * TEMP_FACTOR);
   } 
   else if (mode == "HEATING") {
     // 난방: PWM이 높을수록 온도가 올라감 (30 -> 35)
-    theoreticalTemp = AMBIENT_TEMP + (groups[idx].currentPWM * TEMP_FACTOR);
+    theoreticalTemp = AMBIENT_TEMP_HEATING + (groups[idx].currentPWM * TEMP_FACTOR);
   }
   
   // 실제 온도처럼 서서히 변하게 함 (Low Pass Filter)
