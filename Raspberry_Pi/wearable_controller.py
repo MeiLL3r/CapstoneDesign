@@ -394,7 +394,7 @@ def apply_preset_to_arduino(preset_id):
     preset_data = config_data['presets'][preset_id]
     
     try:
-        # 1. 데이터 파싱 (구조가 control 노드와 동일함)
+        # 1. 데이터 파싱
         mode = preset_data.get('global_mode', 'off').upper()
         g1 = preset_data.get('groups', {}).get('group_1', {}).get('target_temp', 24)
         g2 = preset_data.get('groups', {}).get('group_2', {}).get('target_temp', 24)
@@ -417,6 +417,9 @@ def arduino_thread_worker():
     
     last_resend_time = 0
     RESEND_INTERVAL = 3
+    
+    last_data_received_time = time.time()
+    DATA_TIMEOUT = 15 
 
     print("🔌 아두이노 스레드 시작됨")
 
@@ -424,26 +427,37 @@ def arduino_thread_worker():
         try:
             # 1. 연결 확인 및 재연결 로직
             if arduino is None or not arduino.is_open:
-                print("아두이노 연결 시도 중...")
+                print("🔄 아두이노 연결 시도 중...")
                 try:
-                    arduino = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=1)
-                    time.sleep(2) # 아두이노 리셋 대기
-                    # 아두이노 버퍼 비우기 (중요)
+                    arduino = serial.Serial(ARDUINO_PORT, BAUD_RATE, timeout=0, write_timeout=0)
+                    time.sleep(2) 
                     arduino.reset_input_buffer()
+                    arduino.reset_output_buffer()
                     print(f"✅ 아두이노 연결 성공 ({ARDUINO_PORT})")
+                    last_data_received_time = time.time() 
                 except serial.SerialException as e:
                     print(f"⚠️ 연결 실패: {e}")
                     time.sleep(3)
                     continue
 
-            # 2. 상태 재전송 (동기화) 로직
+            # 2. 수신 감시 (Watchdog)
+            if time.time() - last_data_received_time > DATA_TIMEOUT:
+                print(f"🚨 {DATA_TIMEOUT}초간 데이터 없음! 연결 재설정...")
+                try:
+                    arduino.close()
+                except:
+                    pass
+                arduino = None 
+                time.sleep(1)
+                continue
+
+            # 3. 상태 재전송 (동기화)
             if firebase_is_connected and (time.time() - last_resend_time > RESEND_INTERVAL):
                 try:
                     control_ref = db.reference(f'devices/{device_id}/control', app=firebase_app)
                     current_state = control_ref.get()
                     if current_state:
                         mode = current_state.get('global_mode', 'off').upper()
-                        # groups가 없거나 구조가 다를 경우 대비
                         g1_node = current_state.get('groups', {}).get('group_1', {})
                         g2_node = current_state.get('groups', {}).get('group_2', {})
                         
@@ -452,65 +466,61 @@ def arduino_thread_worker():
                         
                         cmd_a = f"CMD:A:{mode}:{t1}\n"
                         cmd_b = f"CMD:B:{mode}:{t2}\n"
+                        
                         arduino.write(cmd_a.encode())
-                        time.sleep(0.05)
+                        time.sleep(0.01) # 딜레이 최소화
                         arduino.write(cmd_b.encode())
                     last_resend_time = time.time()
                 except Exception as e:
-                    print(f"상태 동기화 중 에러: {e}")
+                    print(f"통신 동기화 경고: {e}")
 
-            # 3. 데이터 수신 로직 (디버깅 강화)
+            # 4. 데이터 수신 로직
+            # while 루프를 써서 쌓인 데이터를 싹 다 읽어버림
             if arduino.in_waiting > 0:
-                try:
-                    raw_line = arduino.readline()
-                    line = raw_line.decode('utf-8', errors='ignore').strip()
-                    
-                    # # [디버깅] 들어오는 모든 데이터를 출력
-                    # if line: 
-                    #     # 너무 자주 뜨면 주석 처리
-                    #     print(f"[RX] 수신됨: {line}") 
-
-                    if line.startswith("SENSORS:"):
-                        if firebase_is_connected:
-                            try:
-                                # SENSORS:24,25,26,26,25
-                                parts = line.split(":")[1].split(",")
-                                if len(parts) == 5:
-                                    temps = [int(float(p)) for p in parts]
-                                    avg_temp = sum(temps) // 5
-                                    
-                                    updates = {'current_temp': avg_temp}
-                                    for i in range(5):
-                                        sensor_key = f'sensor_{i+1:02d}'
-                                        updates[f'sensors/{sensor_key}/temp'] = temps[i]
-                                    
-                                    db.reference(f'devices/{device_id}/status', app=firebase_app).update(updates)
-                                    print(f"✅ 파이어베이스 업데이트 완료: {temps}")
-                                else:
-                                    print(f"⚠️ 데이터 개수 불일치: {len(parts)}개")
-                            except Exception as e:
-                                print(f"❌ 데이터 파싱 에러: {e} / 원본: {line}")
-                        else:
-                            print("⚠️ 파이어베이스 미연결로 데이터 전송 스킵")
-                    
-                    # SENSORS로 시작 안 하는데 뭔가 들어오는 경우 확인
-                    elif line:
-                        print(f"❓ 알 수 없는 데이터: {line}")
-
-                except Exception as e:
-                    print(f"❌ 읽기 에러: {e}")
+                last_data_received_time = time.time() # 시간 갱신
+                
+                # 가장 최근 데이터만 남기기 위한 변수
+                last_valid_line = None
+                
+                # 버퍼에 있는 모든 줄을 읽음
+                while arduino.in_waiting > 0:
+                    try:
+                        raw = arduino.readline()
+                        decoded = raw.decode('utf-8', errors='ignore').strip()
+                        if decoded.startswith("SENSORS:"):
+                            last_valid_line = decoded
+                    except:
+                        pass
+                
+                # 쌓여있던 것 중 가장 최신 것 하나만 처리 (파이어베이스 부하 감소)
+                if last_valid_line and firebase_is_connected:
+                    try:
+                        # [RX] 로그는 너무 많으면 주석 처리
+                        print(f"[RX] {last_valid_line}")
+                        
+                        parts = last_valid_line.split(":")[1].split(",")
+                        if len(parts) == 5:
+                            temps = [int(float(p)) for p in parts]
+                            avg_temp = sum(temps) // 5
+                            
+                            updates = {'current_temp': avg_temp}
+                            for i in range(5):
+                                sensor_key = f'sensor_{i+1:02d}'
+                                updates[f'sensors/{sensor_key}/temp'] = temps[i]
+                            
+                            db.reference(f'devices/{device_id}/status', app=firebase_app).update(updates)
+                    except Exception as e:
+                        print(f"데이터 처리 오류: {e}")
 
         except Exception as e:
-            print(f"⚠️ 아두이노 스레드 치명적 오류: {e}")
+            print(f"⚠️ 스레드 예외: {e}")
             if arduino:
-                try:
-                    arduino.close()
-                except:
-                    pass
+                try: arduino.close()
+                except: pass
             arduino = None
             time.sleep(5)
         
-        time.sleep(0.05) # 루프 속도 조절
+        time.sleep(0.1)
 
 # --- 5. 프로그램 종료 처리 ---
 def cleanup():
